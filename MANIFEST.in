@@ -1,0 +1,4 @@
+include LICENSE.txt
+include LICENSE-LESSER.txt
+include CHANGELOG.md
+include README.md

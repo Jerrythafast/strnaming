@@ -1,0 +1,6 @@
+STRNaming Changelog
+===================
+
+Version 1.0.0 (21 december 2020)
+--------------------------------
+Initial release.
