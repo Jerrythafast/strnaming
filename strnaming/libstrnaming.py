@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-
 #
-# Copyright (C) 2020 Jerry Hoogenboom
+# Copyright (C) 2021 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -21,9 +19,11 @@
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import math, re, sys, time
+import itertools, math, re, sys, time
 
 from functools import reduce
+
+from .libsequence import align
 
 import json #FIXME, temp
 
@@ -59,132 +59,18 @@ NAMING_OPTIONS = {
     "prefix_suffix_factor": -1.785957
 }
 
-# Pattern that matches a CE allele number.
-PAT_CE = re.compile("^(\d+)(?:[\.,](\d+))?$")
-
-# Complementary bases.
-COMPL = {"A": "T", "T": "A", "G": "C", "C": "G"}
-
 
 class OutOfTimeException(Exception):
     pass
 class OscillationException(Exception):
+    pass
+class ComplexityException(Exception):
     pass
 
 
 def print_options():
     print("%r" % (NAMING_OPTIONS,))
 #print_options
-
-
-def reverse_complement(sequence):
-    """Return the reverse complement of the given DNA sequence."""
-    return "".join(COMPL.get(x, x) for x in reversed(sequence))
-#reverse_complement
-
-
-def align(haystack, needle, prefix=False, debug=False):
-    """
-    Find the closest match of needle in haystack.
-    If prefix is true, the match will start at the start of haystack.
-    """
-    try:
-        return align.cache[haystack, needle, prefix]
-    except KeyError:
-        pass
-
-    row_offset = len(needle) + 1
-    matrix_match = [0] * row_offset * (len(haystack) + 1)
-    matrix_direction = [0] * row_offset * (len(haystack) + 1)
-
-    # Arrow enum constants.
-    A_MATCH = 0b00001
-    A_HORZ  = 0b00010
-    A_VERT  = 0b00100
-
-    # Settings.
-    MATCH_SCORE = 1
-    MISMATCH_SCORE = -1
-    GAP_SCORE = -1
-
-    max_score = len(needle) * GAP_SCORE
-    max_pos = 0
-
-    for i in range(1, len(matrix_match)):
-        x = i % row_offset
-        y = i // row_offset
-
-        # Initialisation of first row and column.
-        if x == 0:
-            matrix_direction[i] |= A_VERT  # Can go vertically.
-            if prefix:
-                matrix_match[i] = y * GAP_SCORE
-            continue
-        if y == 0:
-            matrix_direction[i] |= A_HORZ  # Can go horizontally.
-            matrix_match[i] = x * GAP_SCORE
-            continue
-
-        if needle[x - 1] == haystack[y - 1]:
-            match = MATCH_SCORE
-        else:
-            match = MISMATCH_SCORE
-
-        options = [
-            matrix_match[i - 1 - row_offset] + match,
-            matrix_match[i - 1] + GAP_SCORE,
-            matrix_match[i - row_offset] + GAP_SCORE]
-        matrix_match[i] = max(options)
-        if options[0] == matrix_match[i]:
-            matrix_direction[i] |= A_MATCH  # Can go diagonally.
-        if options[1] == matrix_match[i]:
-            matrix_direction[i] |= A_HORZ  # Can go horizontally.
-        if options[2] == matrix_match[i]:
-            matrix_direction[i] |= A_VERT  # Can go vertically.
-        if x == len(needle) and matrix_match[i] > max_score:
-            max_score = matrix_match[i]
-            max_pos = i
-
-    if debug:
-        print("MATCH")
-        for i in range(0, len(matrix_match), row_offset):
-            print(("%5i" * row_offset) % tuple(matrix_match[i : i + row_offset]))
-        print("FLAGS")
-        for i in range(0, len(matrix_direction), row_offset):
-            print(("%3s|" * row_offset) % tuple("".join((
-                "H" if x & A_HORZ else " ",
-                "D" if x & A_MATCH  else " ",
-                "V" if x & A_VERT else " "
-            )) for x in matrix_direction[i : i + row_offset]))
-        print("Traceback")
-
-
-    # Backtracking.
-    i = max_pos
-    while (prefix and i) or i % row_offset:
-        x = i % row_offset
-        y = i // row_offset
-        if debug:
-            print("%i = (%i, %i)" % (i, x, y))
-
-        if matrix_direction[i] & A_HORZ:
-            # Go horizontally.  Deletion.
-            i -= 1
-        elif matrix_direction[i] & A_VERT:
-            # Go vertically.  Insertion.
-            i -= row_offset
-        else:
-            # Go diagonally.  Either match or mismatch.
-            i -= 1 + row_offset
-
-    # TODO: I could return the traceback to call variants from it in the naming phase.
-    result = (i // row_offset, max_pos // row_offset, max_score)
-
-    # Store the result in the cache.
-    align.cache[haystack, needle, prefix] = result
-    return result
-align.cache = {}
-#align
 
 
 def detect_repeats(seq):
@@ -374,23 +260,37 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
 #calc_path_score
 
 
-def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphans=None, start=0):
+def unique_set(all_sets, this_set):
+    """
+    Memory-saving helper function. Return an equivalent set from all_sets
+    for this_set, or add this_set to all_sets and return this_set.
+    """
+    key = ",".join(sorted(this_set))
+    if key not in all_sets:
+        all_sets[key] = this_set
+    return all_sets[key]
+#unique_set
+
+
+def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphans=None, start=0, sets=None):
+    if sets is None:
+        sets = {}
     if scaffold is None:
-        for i, repeat in enumerate(repeats[start:], start):
+        for i, repeat in enumerate(itertools.islice(repeats, start, None), start):
             unit_len = len(repeat[2])
             # max_gap_len is equal to the unit length for non-preferred singletons, N/A otherwise.
             max_gap_len = unit_len if not repeat[3][3] and unit_len == repeat[1] - repeat[0] else 0
             new_scaffold = [repeat]
             new_infos = repeat[3][:2]
-            new_anchored = {repeat[2]} if repeat[3][2] else set()
-            new_orphans = set() if repeat[3][2] else {repeat[2]}
+            new_anchored = unique_set(sets, {repeat[2]} if repeat[3][2] else set())
+            new_orphans = unique_set(sets, set() if repeat[3][2] else {repeat[2]})
             yield (new_scaffold, new_infos, new_anchored, new_orphans, max_gap_len)
-            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i)
+            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i, sets)
         return
 
     scaffold_end_pos = scaffold[-1][1]
     scaffold_end_unit = scaffold[-1][2]
-    for i, repeat in enumerate(repeats[start:], start):
+    for i, repeat in enumerate(itertools.islice(repeats, start, None), start):
         # We're not putting repeats of the same unit adjacently. (Those
         # have been split up by upstream code to allow more junctions.)
         unit = repeat[2]
@@ -401,19 +301,21 @@ def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphan
             new_orphans = orphans
             if repeat[3][2]:
                 if unit not in anchored:
-                    new_anchored = new_anchored | {unit}
+                    new_anchored = unique_set(sets, new_anchored | {unit})
                     if unit in orphans:
-                        new_orphans = new_orphans - {unit}
+                        new_orphans = unique_set(sets, new_orphans - {unit})
             elif unit not in anchored and unit not in orphans:
-                new_orphans = new_orphans | {unit}
+                new_orphans = unique_set(sets, new_orphans | {unit})
             yield (new_scaffold, new_infos, new_anchored, new_orphans, 0)
-            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i)
+            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i, sets)
 #generate_scaffolds
 
 
 def get_scaffolds(repeats):
     scaffolds = {}
-    for scaffold in generate_scaffolds(repeats):
+    for n, scaffold in enumerate(generate_scaffolds(repeats)):
+        if n == 5000000:
+            raise ComplexityException()  # More than 5 million scaffolds?!
         start = scaffold[0][0][0]
         end = scaffold[0][-1][1]
         if start not in scaffolds:
@@ -501,8 +403,11 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
 #get_ranges
 
 
-def recurse_gen_path(start_pos, end_pos, scaffolds, ranges,
+def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
                      anchored=set(), orphans=set(), prev_gap_len=-1, prev_unit=""):
+    # Timekeeping.
+    if time.monotonic() - starttime > MAX_SECONDS:
+        raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
         for scaffold, longest_stretch, anchored2, orphans2, max_gap_len in scaffolds_here[end_pos]:
@@ -543,15 +448,15 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges,
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if not now_orphaned - anchorable_after_gap:
                     for substructure, longest_stretch1 in recurse_gen_path(next_pos, end_pos,
-                            scaffolds, remaining_ranges, now_anchored, now_orphaned, gap_len,
-                            last_unit):
+                            scaffolds, remaining_ranges, starttime,
+                            now_anchored, now_orphaned, gap_len, last_unit):
                         yield (scaffold + substructure, max(longest_stretch1, longest_stretch2))
 #recurse_gen_path
 
 
-def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq):
+def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime):
     # Most validity rules are efficiently implemented in recurse_gen_path.
-    for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges):
+    for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime):
         path, (longest_stretch, block_length) = result
 
         # The path is invalid if it uses a repeat unit that is longer
@@ -576,7 +481,7 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq):
 #gen_valid_paths
 
 
-def gen_all_paths(prefix, suffix, seq, repeats, is_refseq):
+def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
     scaffolds = get_scaffolds(repeats)
     short_gaps, all_gaps = get_gaps(repeats, scaffolds)
     ranges = get_ranges(scaffolds, short_gaps, all_gaps, is_refseq)
@@ -604,7 +509,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq):
 
         # First, try to reach exactly from prefix to suffix.
         if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix]:
-            for result in gen_valid_paths(len_prefix, pos_suffix, scaffolds, ranges, is_refseq):
+            for result in gen_valid_paths(len_prefix, pos_suffix, scaffolds, ranges, is_refseq, starttime):
                 success = True
                 yield result
             if success:
@@ -619,13 +524,13 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq):
         # or finishing at the start of suffix separately.
         if has_prefix:
             for end_pos in end_positions & ranges[0][len_prefix].keys():
-                for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq):
+                for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq, starttime):
                     success = True
                     yield result
         if has_suffix:
             for start_pos in start_positions:
                 if pos_suffix in ranges[0][start_pos]:
-                    for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq):
+                    for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq, starttime):
                         success = True
                         yield result
         if success:
@@ -634,7 +539,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq):
     for start_pos in start_positions:
         for end_pos in end_positions & ranges[0][start_pos].keys():
             if not is_refseq or end_pos - start_pos >= NAMING_OPTIONS["min_structure_length"]:
-                yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq)
+                yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime)
 #gen_all_paths
 
 
@@ -649,10 +554,7 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_g
     best_score = -sys.maxsize
     best_path = []
 
-    for path, (_, block_length) in gen_all_paths(prefix, suffix, seq, repeats, is_refseq):
-        # Timekeeping.
-        if time.monotonic() - starttime > MAX_SECONDS:
-            raise OutOfTimeException()
+    for path, (_, block_length) in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
 
         # Calculate the score of the current path.
         score = calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path,
@@ -892,15 +794,39 @@ def collapse_repeat_units(seq, prefix, suffix, preferred_units, overlong_gap):
 #collapse_repeat_units
 
 
-collapse_repeat_units_refseq_three = set()  # List of sequences requiring a third round.
-def collapse_repeat_units_refseq(seq):
+def ranges_of(repeats, len_seq):
+    if not repeats:
+        return []
+    ranges = []
+    range_start = None
+    range_end = None
+    for start, end, unit, infos in repeats:
+        if range_start is None:
+            # Start new range.
+            range_start = max(0, start - NAMING_OPTIONS["max_long_gap"])
+            range_end = min(len_seq, end + NAMING_OPTIONS["max_long_gap"])
+        elif start <= range_end:
+            # Extend current range.
+            range_end = min(len_seq, max(range_end, end + NAMING_OPTIONS["max_long_gap"]))
+        else:
+            # Illegally large gap between repeats.
+            if range_end - range_start >= NAMING_OPTIONS["min_structure_length"]:
+                ranges.append((range_start, range_end))
+            range_start = max(0, start - NAMING_OPTIONS["max_long_gap"])
+            range_end = min(len_seq, end + NAMING_OPTIONS["max_long_gap"])
+    ranges.append((range_start, range_end))
+    return ranges
+#ranges_of
+
+
+def collapse_repeat_units_refseq(seq, *, allow_close=0):
     """Combine repeat units in the given sequence."""
 
     # Find some units to start with. These will be treated as 'preferred' in the first round.
     unit_locations = find_repeated_units(seq, True)
 
     previous_paths = set()  # FIXME, temp
-    last_path = None
+    previous_path = None
     large_gap_length = -1
     while True:
         # Make sure the longest repeat units come first.
@@ -914,40 +840,50 @@ def collapse_repeat_units_refseq(seq):
         # Note: unit_locations will be amended with newly-found units.
         repeats = find_everything(seq, unit_locations)
 
-        # Find the best combination of repeat unit usage.
-        prefix = None if not last_path else seq[:last_path[0][0]]
-        suffix = None if not last_path else seq[last_path[-1][1]:]
-        score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, large_gap_length)
+        # Initially, repeats can have multiple disjoint ranges.
+        ranges = [] if previous_path else ranges_of(repeats, len(seq))
+        if len(ranges) > 1:
+            # There is an illegally large gap between the repeats;
+            # re-analyse this sequence in separate parts instead.
+            score = -sys.maxsize
+            path = []
+            for range_start, range_end in ranges:
+                range_seq = seq[range_start : range_end]
+                unit_locations = find_repeated_units(range_seq, True)
+                preferred_units = sorted(unit_locations, key=len, reverse=True)
+                repeats = find_everything(range_seq, unit_locations)
+                new_score, new_path = get_best_path(None, None, range_seq, repeats, preferred_units)
+                if new_score > score:
+                    score = new_score
+                    path = [[start + range_start, end + range_start, unit]
+                        for start, end, unit in new_path] if range_start else new_path
+        else:
+            # Find the best combination of repeat unit usage.
+            prefix = None if not previous_path else seq[:previous_path[0][0]]
+            suffix = None if not previous_path else seq[previous_path[-1][1]:]
+            score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, large_gap_length)
 
-        # TODO: Log a warning if repeats occur very close to either end of the sequence.
+        # Log a warning if repeats occur very close to either end of the sequence.
         # The name may not be stable if this is the case.
-        """js:
-        for ([start,end,unit] of path)
-          if (start < 30 || seq.length-end < 30)
-            console.log("Too close!", [start,seq.length-end,unit + "(" + ((end-start)/unit.length) + ")"]);
-        """
+        if path and path[0][0] < 30 and not allow_close & 1:
+            sys.stderr.write("Path #%i starts at position %i in analysed sequence\n" % (len(previous_paths) + 1, path[0][0]))
+        if path and len(seq) - path[-1][1] < 30 and not allow_close & 2:
+            sys.stderr.write("Path #%i ends at %i positions before end of sequence\n" % (len(previous_paths) + 1, len(seq) - path[-1][1]))
 
-        if last_path != path:
+        if previous_path != path:
             # FIXME, temp:
             this_path = json.dumps(path)
             if this_path in previous_paths:
-                print("last_path=%r" % (json.dumps(last_path),))
-                print("this_path=%r" % (this_path,))
-                print("previous_paths=%r" % (previous_paths,))
+                sys.stderr.write("prev_path=%r\n" % (json.dumps(previous_path),))
+                sys.stderr.write("this_path=%r\n" % (this_path,))
+                sys.stderr.write("previous_paths=%r\n" % (previous_paths,))
                 raise OscillationException()
             previous_paths.add(this_path)
-            if len(previous_paths) == 2:
-                collapse_repeat_units_refseq_three.add(seq)
 
             # Repeat find_everything() and get_best_path(), now treating the used units as preferred.
             used_units = set(unit for start, end, unit in path)
-            for unit in tuple(unit_locations.keys()):
-                if unit not in used_units:
-                    del unit_locations[unit]
-                else:
-                    # The preferred units can go anywhere in the next round.
-                    unit_locations[unit] = [(0, len(seq))]
-            last_path = path
+            unit_locations = {unit: [(0, len(seq))] for unit in used_units}
+            previous_path = path
             large_gap = find_overlong_gap(path)
             large_gap_length = large_gap[1] - large_gap[0] if large_gap else 0
         else:
@@ -958,291 +894,19 @@ def collapse_repeat_units_refseq(seq):
 ### Entry point for refseq analysis ###
 
 
-def recurse_collapse_repeat_units_refseq(seq, *, offset=0):
-    score, path = collapse_repeat_units_refseq(seq)
+def recurse_collapse_repeat_units_refseq(seq, *, offset=0, allow_close=0):
+    score, path = collapse_repeat_units_refseq(seq, allow_close=allow_close)
     if path and path[-1][1] - path[0][0] >= NAMING_OPTIONS["min_structure_length"]:
 
         # Maybe we can make structures before this one.
-        pos = path[0][0] - NAMING_OPTIONS["max_long_gap"]
+        pos = path[0][0]
         if pos >= NAMING_OPTIONS["min_structure_length"]:
-            yield from recurse_collapse_repeat_units_refseq(seq[:pos], offset=offset)
+            yield from recurse_collapse_repeat_units_refseq(seq[:pos], offset=offset, allow_close=allow_close|2)
 
         yield [[repeat[0] + offset, repeat[1] + offset, repeat[2]] for repeat in path]
 
         # Maybe we can make structures after this one.
-        pos = path[-1][1] + NAMING_OPTIONS["max_long_gap"]
+        pos = path[-1][1]
         if len(seq) - pos >= NAMING_OPTIONS["min_structure_length"]:
-            yield from recurse_collapse_repeat_units_refseq(seq[pos:], offset=pos+offset)
+            yield from recurse_collapse_repeat_units_refseq(seq[pos:], offset=pos+offset, allow_close=allow_close|1)
 #recurse_collapse_repeat_units_refseq
-
-
-# FIXME, get_genome_pos is copypasted from FDSTools but not all its features are used by STRNaming.
-
-def get_genome_pos(location, x, *, invert=False):
-    """Get the genome position of the x-th base in a sequence."""
-    if invert:
-        offset = 0
-        for i in range(1, len(location)):
-            if i % 2:
-                # Starting position.
-                pos = location[i]
-            elif pos <= x <= location[i]:
-                # x is in the current range
-                break
-            else:
-                offset += location[i] - pos + 1
-        else:
-            if len(location) % 2:
-                raise ValueError("Position %i is outside sequence range" % x)
-        return offset + x - pos
-    else:
-        for i in range(1, len(location)):
-            if i % 2:
-                # Starting position.
-                pos = location[i]
-            elif location[i]-pos < x:
-                # x is after this ending position
-                x -= location[i] - pos + 1
-            else:
-                # x is before this ending position
-                break
-        return pos + x
-#get_genome_pos
-
-
-# TODO: merge align() into this
-def align_affine(template, sequence, *, match_score=1, mismatch_score=-3, gap_open_score=-7, gap_extend_score=-2, cache=True, debug=False):
-    """
-    Perform a global alignment of sequence to template and return a
-    list of variations detected.
-
-    By default, the results of this function are cached.  Set cache to
-    False to suppress caching the result and reduce memory usage.
-
-    Setting debug to True will cause the alignment matrices to be
-    printed to sys.stdout.  Be aware that they can be quite large.
-    """
-    try:
-        return align_affine.cache[template, sequence, match_score, mismatch_score, gap_open_score, gap_extend_score]
-    except KeyError:
-        pass
-
-    row_offset = len(template) + 1
-    matrix_match = [0] * row_offset * (len(sequence) + 1)
-    matrix_gap1 = [-sys.maxsize - 1] * row_offset * (len(sequence) + 1)
-    matrix_gap2 = [-sys.maxsize - 1] * row_offset * (len(sequence) + 1)
-    matrix_direction = [0] * row_offset * (len(sequence) + 1)
-
-    # Matrix and arrow enum constants.
-    M_MATCH = 0
-    M_GAP1 = 1
-    M_GAP2 = 2
-    A_MATCH  = 0b00001
-    A_HORZ_O = 0b00010
-    A_HORZ_E = 0b00100
-    A_VERT_O = 0b01000
-    A_VERT_E = 0b10000
-
-    for i in range(len(matrix_match)):
-        x = i % row_offset
-        y = i // row_offset
-
-        # Initialisation of first row and column.
-        if x == 0 or y == 0:
-            if x != 0:
-                # Top row.
-                matrix_gap1[i] = gap_open_score + gap_extend_score * (x - 1)
-                matrix_match[i] = matrix_gap1[i]
-                matrix_direction[i] = A_HORZ_E | (A_HORZ_O if x == 1 else 0)
-            elif y != 0:
-                # Left column.
-                matrix_gap2[i] = gap_open_score + gap_extend_score * (y - 1)
-                matrix_match[i] = matrix_gap2[i]
-                matrix_direction[i] = A_VERT_E | (A_VERT_O if y == 1 else 0)
-            else:
-                # Top left corner.
-                matrix_direction[i] = A_MATCH
-            continue
-
-
-        match = match_score if template[x - 1] == sequence[y - 1] else mismatch_score
-
-        options_gap1 = (
-            matrix_match[i - 1] + gap_open_score,
-            matrix_gap1[i - 1] + gap_extend_score)
-        matrix_gap1[i] = max(options_gap1)
-        if options_gap1[0] > options_gap1[1]:
-            matrix_direction[i] |= A_HORZ_O  # Must exit M_GAP1 here.
-
-        options_gap2 = (
-            matrix_match[i - row_offset] + gap_open_score,
-            matrix_gap2[i - row_offset] + gap_extend_score)
-        matrix_gap2[i] = max(options_gap2)
-        if options_gap2[0] > options_gap2[1]:
-            matrix_direction[i] |= A_VERT_O  # Must exit M_GAP2 here.
-
-        options = (
-            matrix_match[i - 1 - row_offset] + match,
-            matrix_gap1[i],
-            matrix_gap2[i])
-        matrix_match[i] = max(options)
-        if options[0] == matrix_match[i]:
-            matrix_direction[i] |= A_MATCH  # Can stay in M_MATCH here.
-        if options[1] == matrix_match[i]:
-            matrix_direction[i] |= A_HORZ_E  # Can enter M_GAP1 here.
-        if options[2] == matrix_match[i]:
-            matrix_direction[i] |= A_VERT_E  # Can enter M_GAP2 here.
-
-    if debug:
-        print("GAP1")
-        for i in range(0, len(matrix_gap1), row_offset):
-            print(("%5i" * row_offset) % tuple(matrix_gap1[i : i + row_offset]))
-        print("GAP2")
-        for i in range(0, len(matrix_gap2), row_offset):
-            print(("%5i" * row_offset) % tuple(matrix_gap2[i : i + row_offset]))
-        print("Match")
-        for i in range(0, len(matrix_match), row_offset):
-            print(("%5i" * row_offset) % tuple(matrix_match[i : i + row_offset]))
-        print("FLAGS")
-        for i in range(0, len(matrix_direction), row_offset):
-            print(("%5s|" * row_offset) % tuple("".join((
-                "h" if x & A_HORZ_O else " ",
-                "H" if x & A_HORZ_E else " ",
-                "D" if x & A_MATCH  else " ",
-                "V" if x & A_VERT_E else " ",
-                "v" if x & A_VERT_O else " "
-            )) for x in matrix_direction[i : i + row_offset]))
-        print("Traceback")
-
-
-    # Backtracking.
-    variants = []
-    variant_template = 0
-    variant_sequence = 0
-    i = len(matrix_match) - 1
-    in_matrix = M_MATCH  # May change before first step.
-    while i >= 0:
-        x = i % row_offset
-        y = i // row_offset
-        if debug:
-            print("(%i, %i)" % (x, y))
-
-        if in_matrix == M_MATCH:
-            # Make gaps as soon as possible (pushed right).
-            if matrix_direction[i] & A_HORZ_E:
-                in_matrix = M_GAP1
-            elif matrix_direction[i] & A_VERT_E:
-                in_matrix = M_GAP2
-            elif not (matrix_direction[i] & A_MATCH):
-                raise ValueError(
-                    "Alignment error: Dead route! (This is a bug.) [%s,%s]" % (template, sequence))
-
-        if in_matrix == M_GAP1:
-            # Go horizontally.  Deletion.
-            variant_template += 1
-            if matrix_direction[i] & A_HORZ_O:
-                # End of gap, go diagonally after this.
-                in_matrix = M_MATCH
-            i -= 1
-            continue
-
-        if in_matrix == M_GAP2:
-            # Go vertically.  Insertion.
-            variant_sequence += 1
-            if matrix_direction[i] & A_VERT_O:
-                # End of gap, go diagonally after this.
-                in_matrix = M_MATCH
-            i -= row_offset
-            continue
-
-        # Go diagonally.  Either match or mismatch.
-        if i != 0 and template[x - 1] != sequence[y - 1]:
-            # Start/extend mismatch.
-            variant_template += 1
-            variant_sequence += 1
-
-        else:
-            # Match.  Flush variants.
-            if variant_template or variant_sequence:
-                variants.append(((x, variant_template), (y, variant_sequence)))
-                variant_template = 0
-                variant_sequence = 0
-        i -= 1 + row_offset
-
-    # Store the result in the cache.
-    if cache:
-        align_affine.cache[template, sequence, match_score, mismatch_score, gap_open_score, gap_extend_score] = variants
-    return variants
-#align_affine
-align_affine.cache = {}
-
-
-def name_variants(template, sequence, variants, *, location=(None, 1)):
-    """
-    Convert the list of variants (obtained through align_affine) to
-    variant calls.  The format (nomenclature) of the
-    returned variants depends on the location argument.
-
-    If location is a tuple ("chromosome name", position), with any
-    integer for the position, all variants are given as substitutions in
-    the form posX>Y.  Insertions and deletions are written as pos.1->Y
-    and posX>-, respectively.  The given position is that of the first
-    base in the template.  With the location set to "suffix", a plus
-    sign is prepended to position numbers and the first base in the
-    template is pos=1.  With location set to "prefix", a minus sign is
-    prepended and bases are counted from right to left instead.
-
-    If location is a tuple ("M", position) with any integer for the
-    position, variants are written following the mtDNA nomenclature
-    guidelines.  The given position is that of the first base in the
-    template.
-    """
-    variant_format = "%s%s>%s"
-    if location == "prefix":
-        location = ("prefix", -len(template))
-    elif location == "suffix":
-        # Include plus signs for position numbers.
-        variant_format = "%+i%s>%s"
-        location = ("suffix", 1)
-    elif not isinstance(location, tuple) or len(location) < 2:
-        raise ValueError("Unknown location %r. It should be 'prefix', "
-            "'suffix', or a tuple (chromosome, position [, endpos])" % location)
-
-    # Backtracking.
-    named_variants = []
-    for (pos_template, len_template), (pos_sequence, len_sequence) in sorted(variants):
-        if location[0] == "M":
-            # MtDNA variants are one-base-at-a-time.
-            for j in range(max(len_template, len_sequence)-1, -1, -1):
-                named_variants.append("%s%i%s%s" % (
-                    template[pos_template + j] if j < len_template else "",#"-",
-                    get_genome_pos(location, x + min(j, len_template - 1)),
-                    ".%i" % (j - len_template + 1) if j >= len_template else "",
-                    sequence[pos_sequence + j] if j < len_sequence else "DEL"))
-        elif len_template == 0:
-            # Insertions: "-130.1->C" instead of "-130->C".
-            pos = get_genome_pos(location, pos_template - 1)
-            if location[0] == "prefix":
-                pos = "-%s" % abs(pos + 1)
-            named_variants.append(variant_format % (pos, ".1-",
-                sequence[pos_sequence : pos_sequence + len_sequence]))
-        else:
-            named_variants.append(variant_format % (
-                get_genome_pos(location, pos_template),
-                template[pos_template : pos_template + len_template],
-                sequence[pos_sequence : pos_sequence + len_sequence] or "-"))
-
-    if location[0] == "prefix":
-        # Reverse variant order for prefix variants.
-        named_variants.reverse()
-
-    return named_variants
-#name_variants
-
-
-def call_variants(template, sequence, *, location=(None, 1), match_score=1, mismatch_score=-3, gap_open_score=-7, gap_extend_score=-2, cache=True, debug=False):
-    variants = align_affine(template, sequence,
-        match_score=match_score, mismatch_score=mismatch_score, gap_open_score=gap_open_score,
-        gap_extend_score=gap_extend_score, cache=cache, debug=debug)
-    return name_variants(template, sequence, variants, location=location)
-#call_variants

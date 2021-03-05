@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
-# Copyright (C) 2020 Jerry Hoogenboom
+# Copyright (C) 2021 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -30,7 +30,7 @@ import textwrap
 #import cProfile  # Imported only if the -d/--debug option is specified
 
 
-from . import usage, version, classes
+from . import usage, version, classes, refseq_cache
 
 
 OPTIMIZE = False  # FIXME; temp. Turn this to 'True' to run optimize.py.
@@ -61,24 +61,31 @@ def run_strnaming(arguments):
     """
     Run STRNaming command with the given arguments.
     """
-    refseq_store = classes.ReferenceSequenceStore(stream_package_data("refseqs.txt"))
-    structure_store = classes.ReferenceStructureStore(
-        stream_package_data("structures.txt"), refseq_store=refseq_store)
+    structure_store = classes.ReferenceStructureStore(stream_package_data("structures.txt"))
     ranges_store = classes.ReportedRangeStore(
         stream_package_data("ranges_%s.txt" % arguments.ranges), structure_store=structure_store)
     for marker, sequence in (line.rstrip("\r\n").split() for line in arguments.instream):
         arguments.outstream.write("%s\t%s\n" % (marker, ranges_store.get_range(marker).get_name(sequence)))
         if arguments.unbuffered:
             arguments.outstream.flush()
-#run
+#run_strnaming
 
 
-def run(arguments):
-    if OPTIMIZE:
-        optimize.run(arguments)
-    else:
-        run_strnaming(arguments)
-#run
+def run_refseq_cache(arguments):
+    """
+    Cache a portion of reference sequence.
+    """
+    rng = re.match(r"(?:[Cc][Hh][Rr])?([1-9XYM]|1[0-9]|2[0-2]):(\d+)\.\.(\d+)", arguments.range)
+    if rng is None:
+        raise ValueError("Invalid range specification '%s'" % arguments.range)
+    try:
+        refseq_cache.get_refseq(rng.group(1), int(rng.group(2)), int(rng.group(3)))
+    except Exception as e:
+        print("Something went wrong while trying to cache refseq range %s" % arguments.range)
+        raise
+    print("The reference sequence was successfully cached. The cache location is: %s"
+        % refseq_cache.CACHEDIR)
+#run_refseq_cache
 
 
 def main():
@@ -93,22 +100,35 @@ def main():
         help="if specified, additional debug output is given")
     if OPTIMIZE:
         optimize.add_arguments(parser)
+        parser.set_defaults(func=optimize.run)
     else:
-        parser.add_argument("-U", "--unbuffered", action="store_true",
+        subparsers = parser.add_subparsers(title="available actions", metavar="ACTION")
+        subparser = subparsers.add_parser("name-sequences", formatter_class=_HelpFormatter,
+            help="convert sequences to allele names (default)",
+            description="generate allele names for one or more DNA sequences")
+        subparser.add_argument("-U", "--unbuffered", action="store_true",
             help="if specified, the output buffer is flushed after every line")
-        parser.add_argument("-r", "--ranges", metavar="uas-frr", choices=("uas-frr",),
+        subparser.add_argument("-r", "--ranges", metavar="uas-frr", choices=("uas-frr",),
             required=True,
             help="specify 'uas-frr' to use UAS flanking region report ranges (mandatory; future "
                  "versions of STRNaming will offer more options)")
-        parser.add_argument("instream", metavar="IN", nargs="?", type=argparse.FileType("tr"),
+        subparser.add_argument("instream", metavar="IN", nargs="?", type=argparse.FileType("tr"),
             default="-",
             help="an input file or stream containing a marker name and a raw sequence on each line, "
                  "separated by whitespace, which will be used to process in STRNaming (default: read "
                  "from stdin)")
-        parser.add_argument("outstream", metavar="OUT", nargs="?", type=argparse.FileType("tw"),
+        subparser.add_argument("outstream", metavar="OUT", nargs="?", type=argparse.FileType("tw"),
             default=sys.stdout,
             help="output file, always uses a tab character as separator (default: write to stdout)")
-
+        subparser.set_defaults(func=run_strnaming)
+        subparser = subparsers.add_parser("refseq-cache", formatter_class=_HelpFormatter,
+            help="download and cache reference sequence",
+            description="Makes sure the given portion of reference sequence is available in "
+                        "STRNaming's offline reference sequence cache, downloading the sequence "
+                        "from the Ensembl REST API (http://rest.ensembl.org) if necessary.")
+        subparser.add_argument("range", metavar="RANGE",
+            help="range of sequence to download, for example 'chr2:1489653..1489689'")
+        subparser.set_defaults(func=run_refseq_cache)
     try:
         # Assume the user wants help if they just type 'strnaming'.
         if len(sys.argv) == 1:
@@ -124,9 +144,9 @@ def main():
                 "and argument order: '%s'." % "', '".join(unknowns))
         if args.debug:
             import cProfile
-            cProfile.runctx("run(args)", globals(), locals(), sort="tottime")
+            cProfile.runctx("args.func(args)", globals(), locals(), sort="tottime")
         else:
-            run(args)
+            args.func(args)
     except Exception as error:
         if args.debug:
             raise

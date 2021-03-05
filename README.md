@@ -34,7 +34,7 @@ of the Universal Analysis Software for the ForenSeq DNA Signature Prep Kit
 The command-line help can be accessed by running `strnaming --help`. In short,
 an STRNaming command looks like this:
 
-    strnaming --ranges uas-frr inputfile.txt outputfile.txt
+    strnaming name-sequences --ranges uas-frr inputfile.txt outputfile.txt
 
 The input file should have a marker name and a sequence on each line, separated
 by whitespace (i.e., tabs or spaces).
@@ -62,8 +62,29 @@ stream (`stdout`). Any errors are reported on the standard error stream
 `--unbuffered` command-line switch, STRNaming will immediately flush its output
 stream after every line of output.
 
+### Offline use
+STRNaming will automatically download and cache portions of reference sequence
+from the Ensembl REST API (http://rest.ensembl.org). If you are running
+STRNaming on a system without internet access, and you need a piece of
+reference sequence that was not bundled with the STRNaming package, a message
+will be displayed to manually store the reference sequence in a specific
+location. To this end, run the following command (on a system with internet
+access) to download the sequence:
+
+    strnaming refseq-cache chr2:1489653..1489689
+
+Upon success, the location of the downloaded cache files will be displayed.
+These are the files to be copied to the offline system for STRNaming to work.
+
 
 Release Notes
 -------------
+### Version 1.0.1 (in progress)
+Fixed a major issue with HPRTB allele numbering: previously, the CE allele
+number calculated for a given sequence was one higher than it should be.
+
+The built-in reference sequence cache was introduced, along with the new
+mandatory ACTION command-line argument.
+
 ### Version 1.0.0 (21 december 2020)
 Initial release of STRNaming.

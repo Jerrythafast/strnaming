@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2020 Jerry Hoogenboom
+# Copyright (C) 2021 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -20,53 +20,31 @@
 #
 import re
 
-from . import libstrnaming
+from . import length_adjustments, libsequence, libstrnaming, refseq_cache
 # TODO: Proper argument/input checking for all classes/methods!
 
 
 class ReferenceSequenceStore:
-    def __init__(self, input=None, *, online=False):
+    def __init__(self, *, autoload=True):
         """
         Construct a new ReferenceSequenceStore.
 
-        If input is given, it is passed to load_from_tsv().
-        If online is set to True, the get_refseq() function will
-        download the sequence from Ensembl by default if necessary.
+        If autoload is set to True (the default), the get_refseq()
+        method will load the sequence from disk cache or Ensembl by
+        default if necessary.
         """
-        self.online = online
+        self.autoload = autoload
         self.refseqs = {}
-        if input is not None:
-            self.load_from_tsv(input)
 
-    def load_from_tsv(self, input):
+    def load_from_cache(self, chromosome, start, end):
         """
-        Load reference sequences from a tab-separated input stream.
-
-        The first line contains headers, which minimally includes:
-        'chromosome', 'start', and  sequence'.
-        """
-        headers = input.readline().rstrip("\r\n").split("\t")
-        try:
-            ci = {name: headers.index(name) for name in ("chromosome", "start", "sequence")}
-        except ValueError:
-            raise ValueError("The genome reference file should contain tab-separated columns "
-                "named 'chromosome', 'start', and 'sequence'.")
-        for line in input:
-            values = line.rstrip("\r\n").split("\t")
-            self.add_refseq(
-                values[ci["chromosome"]], int(values[ci["start"]]), values[ci["sequence"]])
-
-    def load_from_ensembl(self, chromosome, start, end):
-        """
-        Load a portion of reference sequence from Ensembl.
+        Load a portion of reference sequence from the refseq cache.
 
         The end position is exclusive.
+        If the requested sequence does not reside in the refseq cache on
+        disk, it is automatically downloaded from the Ensembl REST API.
         """
-        # TODO: Error handling.
-        import urllib.request
-        self.add_refseq(chromosome, start, urllib.request.urlopen(
-            "http://rest.ensembl.org/sequence/region/human/%s:%i..%i?content-type=text/plain" % (
-                chromosome, start, end - 1)).read().decode("UTF-8"))
+        self.add_refseq(chromosome, start, refseq_cache.get_refseq(chromosome, start, end - 1))
 
     def add_refseq(self, chromosome, start, seq):
         """
@@ -74,29 +52,40 @@ class ReferenceSequenceStore:
         """
         end = start + len(seq)  # Exclusive.
         if chromosome not in self.refseqs:
-            self.refseqs[chromosome] = [(start, end, seq)]
+            self.refseqs[chromosome] = [[start, end, seq]]
         else:
             parts = self.refseqs[chromosome]
-            # TODO: handle overlap with / extension of existing parts.
-            for i, part in enumerate(parts):
-                if start < part[0]:
-                    if i and start <= parts[i-1][1]:
-                        raise ValueError("Range %i-%i of chromosome %s requires merger with range %i-%i, which is currently unsupported." % (start, end, chromosome, parts[i-1][0], parts[i-1][1]))
-                    if end >= part[0]:
-                        raise ValueError("Range %i-%i of chromosome %s requires merger with range %i-%i, which is currently unsupported." % (start, end, chromosome, part[0], part[1]))
-                    parts.insert(i, (start, end, seq))
-                    break
-            else:
-                if parts and start <= parts[-1][1]:
-                    raise ValueError("Range %i-%i of chromosome %s requires merger with range %i-%i, which is currently unsupported." % (start, end, chromosome, parts[-1][0], parts[-1][1]))
-                parts.append((start, end, seq))
+            i = 0
+            while i <= len(parts):
+                if i == len(parts) or parts[i][0] > start:
+                    # New part starts before part i.
+                    if i and parts[i-1][1] >= start:
+                        if parts[i-1][1] < end:
+                            # New part extends part i-1.
+                            parts[i-1][2] += seq[parts[i-1][1] - start:]
+                            parts[i-1][1] = end
+                    else:
+                        # New part comes between part i-1 and part i.
+                        parts.insert(i, [start, end, seq])
+                        i += 1  # Otherwise, i suddenly points to the new part.
 
-    def get_refseq(self, chromosome, start, end, *, online=None):
+                    while i < len(parts) and parts[i][0] <= end:
+                        if parts[i][1] > end:
+                            # New part (now stored as part i-1) extends into part i.
+                            parts[i-1][2] += parts[i][2][parts[i-1][1] - parts[i][0]:]
+                            parts[i-1][1] = parts[i][1]
+                        # Part i is now completely covered by the new part.
+                        del parts[i]
+                    break  # Successfully inserted new sequence.
+                i += 1
+
+    def get_refseq(self, chromosome, start, end, *, autoload=None):
         """
         Get a portion of reference sequence.
 
         The end position is exclusive.
-        If online=True, the sequence is downloaded from Ensembl if necessary.
+        If autoload=True, the sequence is loaded from disk cache or
+        downloaded from Ensembl if necessary.
         """
         try:
             try:
@@ -104,36 +93,32 @@ class ReferenceSequenceStore:
                     if part_start <= start <= end <= part_end:
                         return seq[start - part_start : end - part_start]
                 raise ValueError(
-                    "Refseq range %i-%i of chromosome %s not available" % (start, end, chromosome))
+                    "Refseq range %i..%i of chromosome %s not available" % (start, end - 1, chromosome))
             except KeyError:
                 raise ValueError("No refseq for chromosome %s available" %  chromosome)
         except ValueError:
-            if online is not False and (self.online or online):
-                self.load_from_ensembl(chromosome, start, end)
+            if autoload is not False and (self.autoload or autoload):
+                self.load_from_cache(chromosome, start, end)
                 return self.get_refseq(chromosome, start, end)
             raise
 
 
 class ReferenceStructureStore:
-    def __init__(self, struct_input=None, *, refseq_store=None, refseq_input=None, analyse_refseqs=False):
+    def __init__(self, struct_input=None, *, refseq_store=None, analyse_refseqs=False):
         """
         Construct a new ReferenceStructureStore.
 
         If refseq_store is provided, it is used as the backing store of
         reference sequene data.
-        If refseq_input is provided, reference sequence data is loaded
-        from it using refseq_store.load_from_tsv(refseq_input).
         If analyse_refseqs=True, the find_in_refseq() method is called for
-        each portion of reference sequence present in refseq_store and refseq_input.
+        each portion of reference sequence present in refseq_store.
         If struct_input is provided, it is passed to load_from_tsv().
         """
         self.structures = {}
         if refseq_store is None:
-            self.refseq_store = ReferenceSequenceStore(refseq_input)
+            self.refseq_store = ReferenceSequenceStore()
         else:
             self.refseq_store = refseq_store
-            if refseq_input is not None:
-                refseq_store.load_from_tsv(refseq_input)
         if analyse_refseqs:
             for chromosome, segments in self.refseq_store.refseqs.items():
                 for start, end, seq in segments:
@@ -158,14 +143,15 @@ class ReferenceStructureStore:
                 structure.append([int(stretches[i]), int(stretches[i+1]), stretches[i+2]])
             self.add_structure(chromosome, structure)
 
-    def find_in_refseq(self, chromosome, start, end, online=False):
+    def find_in_refseq(self, chromosome, start, end, autoload=False):
         """
         Automatically detect STR structures in a portion of reference sequence.
 
         The end position is exclusive.
-        If online=True, the sequence is downloaded from Ensembl if necessary.
+        If autoload=True, the sequence is loaded from disk cache or
+        downloaded from Ensembl if necessary.
         """
-        seq = self.refseq_store.get_refseq(chromosome, start, end, online=online)
+        seq = self.refseq_store.get_refseq(chromosome, start, end, autoload=autoload)
         for structure in libstrnaming.recurse_collapse_repeat_units_refseq(seq, offset=start):
             self.add_structure(chromosome, structure)
 
@@ -231,7 +217,7 @@ class ReportedRangeStore:
         Load reported ranges from a tab-separated input stream.
 
         The first line contains headers, which minimally includes: 'name',
-        'chromosome', 'start', 'end', 'ref_ce', and 'options'.
+        'chromosome', 'start', 'end', and 'options'.
 
         The end position is inclusive.  If sequences are expected in reverse
         complement orientation, the start and end positions should be swapped.
@@ -239,10 +225,10 @@ class ReportedRangeStore:
         headers = input.readline().rstrip("\r\n").split("\t")
         try:
             ci = {name: headers.index(name) for name in
-                ("name", "chromosome", "start", "end", "ref_ce", "options")}
+                ("name", "chromosome", "start", "end", "options")}
         except ValueError:
             raise ValueError("The reported ranges file should contain tab-separated columns "
-                "named 'name', 'chromosome', 'start', 'end', 'ref_ce', and 'options'.")
+                "named 'name', 'chromosome', 'start', 'end', and 'options'.")
         PAT_OPTIONS = re.compile("([^=,]+)=([^=,]+)")
         for line in input:
             values = line.rstrip("\r\n").split("\t")
@@ -254,25 +240,29 @@ class ReportedRangeStore:
                 start, end = end, start
                 reverse_complement = True
             self.add_range(values[ci["name"]], values[ci["chromosome"]], start,
-                end + 1, values[ci["ref_ce"]], reverse_complement, options)
+                end + 1, reverse_complement, options=options)
 
-    def add_range(self, name, chromosome, start, end, ref_ce, reverse_complement, options):
+    def add_complex_range(self, name, genome_position, *, options=None):
         """
-        Store a reported range.
-
-        The end position is exclusive.
-        The reference CE number can be an empty string if unknown.
-        The options are passed to the ReportedRange constructor. If the "aka"
-        option is present, this reported range will be made available under
-        that name as well.
+        Store a new reported range and return its ReportedRange object.
         """
         if name in self.ranges:
             raise ValueError("Duplicate fragment name '%s'" % name)
-        self.ranges[name] = ReportedRange(self.structure_store, chromosome, start, end, ref_ce, reverse_complement, options)
-        if "aka" in options:
-            if options["aka"] in self.ranges:
-                raise ValueError("Duplicate fragment name '%s'" % options["aka"])
-            self.ranges[options["aka"]] = self.ranges[name]
+        self.ranges[name] = ComplexReportedRange(
+            self.structure_store, genome_position, options=options)
+        return self.ranges[name]
+
+    def add_range(self, name, chromosome, start, end, reverse_complement, *, options=None):
+        """
+        Store a new reported range and return its ReportedRange object.
+
+        The end position is exclusive.
+        """
+        if name in self.ranges:
+            raise ValueError("Duplicate fragment name '%s'" % name)
+        self.ranges[name] = ReportedRange(
+            self.structure_store, chromosome, start, end, reverse_complement, options=options)
+        return self.ranges[name]
 
     def get_range(self, name):
         """
@@ -283,13 +273,62 @@ class ReportedRangeStore:
         except KeyError:
             raise ValueError("Range '%s' not found" % name)
 
+    def get_ranges(self):
+        return self.ranges;
 
-class ReportedRange:
-    def __init__(self, structure_store, chromosome, start, end, ref_ce, reverse_complement, options):
-        match_ce = libstrnaming.PAT_CE.match(ref_ce)
+    def get_structure_store(self):
+        return self.structure_store
+
+
+class ComplexReportedRange:
+    def __init__(self, structure_store, genome_position, *, options=None):
+        if not len(genome_position) % 2 or len(genome_position) < 3:
+            raise ValueError(
+                "Genome position %r invalid; it must consist of a chromosome and one or more "
+                "pairs of start and end positions." % (genome_position,))
+        self.options = {} if options is None else {key: value for key, value in options.items()}
+        self.location = tuple(genome_position)
+        self.refseq = ""
+        refseq_store = structure_store.get_refseq_store()
+        chromosome = genome_position[0]
+        for i in range(1, len(genome_position), 2):
+            start, end = genome_position[i : i + 2]
+            if structure_store.get_structures(chromosome, start, end + 1):
+                raise ValueError(
+                    "Complex range overlaps a known STR structure in range Chr%s:%i..%i" %
+                    (chromosome, start, end))
+            self.refseq += refseq_store.get_refseq(chromosome, start, end + 1)
+
+    def get_option(self, option, default=None):
+        return self.options.get(option, default)
+
+    def has_option(self, option):
+        return option in self.options
+
+    def get_tssv(self, seq, *, as_string=True):
+        return seq + "(1)" if as_string else [[seq, 1, None]]
+
+    def from_tssv(self, tssv):
+        return tssv[:-3]
+
+    def get_name(self, seq):
+        variants = libsequence.call_variants(self.refseq, seq, location=self.location)
+        return " ".join(variants) or "REF"
+
+    def from_name(self, seq):
+        """Convert allele name to a raw sequence."""
+        if name == "REF":
+            return self.refseq
+        return libsequence.mutate_sequence(self.refseq, name.split(), location=self.location)
+
+
+class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid code duplication.
+    def __init__(self, structure_store, chromosome, start, end, reverse_complement, *, options=None):
         refseq_store = structure_store.get_refseq_store()
         longest_stretch = 1
 
+        self.options = {} if options is None else {key: value for key, value in options.items()}
+        self.location = (chromosome, start, end)
         self.limit = int(options.get("limit", 0))
         self.library = []
         self.block_length = 1
@@ -301,6 +340,12 @@ class ReportedRange:
         # Analyse sequence to extract repeat units.
         pos = start
         for structure in structure_store.get_structures(chromosome, start, end):
+
+            # Set length adjustment according to prefix/infix/preinsert.
+            self.length_adjust += pos - structure[0][0]
+
+            # Store end position of last structure for later suffix/postinsert adjustment.
+            last_structure_end = structure[-1][1]
 
             # Drop any repeat stretches that have more than an entire repeat
             # outside either end of the reported range.
@@ -316,10 +361,8 @@ class ReportedRange:
             # Store preinsert/postinsert if the structure extends slightly outside range.
             if start > structure[0][0]:
                 self.preinsert = refseq_store.get_refseq(chromosome, structure[0][0], start)
-                self.length_adjust -= start - structure[0][0]
             if end < structure[-1][1]:
                 self.postinsert = refseq_store.get_refseq(chromosome, end, structure[-1][1])
-                self.length_adjust -= structure[-1][1] - end
 
             # Update block_length if this structure contains the longest stretch so far.
             for stretch_start, stretch_end, unit in structure:
@@ -331,12 +374,6 @@ class ReportedRange:
                     continue
                 longest_stretch = stretch_length
                 self.block_length = unit_length
-
-            # Update length adjustment.
-            if pos < structure[0][0]:
-                self.length_adjust += structure[0][0] - pos
-            if match_ce:
-                self.length_adjust += structure[-1][1] - structure[0][0]
 
             prefix = refseq_store.get_refseq(chromosome, pos, structure[0][0]) if pos < structure[0][0] else ""
             if self.library:
@@ -366,22 +403,22 @@ class ReportedRange:
             if pos < end:
                 # Save suffix of last repeat structure in the library.
                 self.library[-1]["suffix"] = refseq_store.get_refseq(chromosome, pos, end)
-                self.length_adjust += end - pos
+            self.length_adjust += last_structure_end - end + length_adjustments.get_adjustment(
+                chromosome, start, end, len(self.library) > 1)
         else:
             self.refseq = refseq_store.get_refseq(chromosome, start, end)
-            self.location = (chromosome, start)
-            if match_ce:
-                self.length_adjust += end - start
-            else:
-                self.length_adjust = None
-        if match_ce:
-            # Update length adjustment with user-provided CE allele number.
-            self.length_adjust -= int(match_ce.group(1)) * self.block_length + int(match_ce.group(2) or 0)
+            self.length_adjust = None
+
+    def get_option(self, option, default=None):
+        return self.options.get(option, default)
+
+    def has_option(self, option):
+        return option in self.options
 
     def get_ce(self, seq):
         if self.limit and len(seq) == self.limit:
             return "?"
-        length = len(seq) - self.length_adjust
+        length = len(seq) + self.length_adjust
         sign = "-" if length < 0 else ""
         length = abs(length)
         return "%s%s%s" % (sign, length // self.block_length,
@@ -389,8 +426,16 @@ class ReportedRange:
 
     def normalize_sequence(self, seq):
         if self.reverse_complement:
-            seq = libstrnaming.reverse_complement(seq)
+            seq = libsequence.reverse_complement(seq)
         return self.preinsert + seq + self.postinsert
+
+    def denormalize_sequence(self, seq):
+        if self.preinsert and not seq.startswith(self.preinsert):
+            raise ValueError("Sequene should start with " + self.preinsert)
+        if self.postinsert and not seq.endswith(self.postinsert):
+            raise ValueError("Sequene should end with " + self.postinsert)
+        seq = seq[len(self.preinsert) : -len(self.postinsert) if self.postinsert else len(seq)]
+        return libsequence.reverse_complement(seq) if self.reverse_complement else seq
 
     def get_stretches(self, seq, *, normalized_seq=None):
         # Short-circuit if no STR structures are within range.
@@ -407,7 +452,7 @@ class ReportedRange:
                 try:
                     end = normalized_seq.index(suffix, pos) + len(suffix)
                 except ValueError:
-                    suffix_start, suffix_end, score = libstrnaming.align(normalized_seq[pos:], suffix)
+                    suffix_start, suffix_end, score = libsequence.align(normalized_seq[pos:], suffix)
                     end = pos + suffix_end
                     suffix = normalized_seq[pos + suffix_start : end]
             else:
@@ -422,11 +467,11 @@ class ReportedRange:
                 break
         return stretches
 
-    def get_tssv(self, seq, as_string=False, *, normalized_seq=None):
+    def get_tssv(self, seq, *, as_string=True, normalized_seq=None):
         if normalized_seq is None:
             normalized_seq = self.normalize_sequence(seq)
         if not self.library:
-            return [[normalized_seq, 1, None]]
+            return normalized_seq + "(1)" if as_string else [[normalized_seq, 1, None]]
         pos = 0
         tssv_seq = []
         for start, end, unit, i in self.get_stretches(seq, normalized_seq=normalized_seq):
@@ -442,6 +487,11 @@ class ReportedRange:
             return "".join("%s(%i)" % (unit, count) for unit, count, i in tssv_seq)
         return tssv_seq
 
+    def from_tssv(self, tssv):
+        """Convert TSSV-style sequence to a raw sequence."""
+        return self.denormalize_sequence("".join(block[0] * int(block[1])
+            for block in libsequence.PAT_TSSV_BLOCK.findall(tssv)))
+
     def get_name(self, seq, *, normalized_seq=None):
         if self.limit and len(seq) == self.limit:
             # TODO: Give sequence-descriptive name nonetheless!
@@ -451,11 +501,9 @@ class ReportedRange:
 
         if not self.library:
             # Report variants if there are not STRs on this range.
-            variants = libstrnaming.call_variants(
+            variants = libsequence.call_variants(
                 self.refseq, normalized_seq, location=self.location)
-            if self.length_adjust is None:
-                return " ".join(variants) or "REF"
-            return "CE" + self.get_ce(seq) + "_" + ("_".join(variants) or "REF")
+            return " ".join(variants) or "REF"
 
         stretches = self.get_stretches(seq, normalized_seq=normalized_seq)
         prefix = self.library[0]["prefix"]
@@ -479,7 +527,7 @@ class ReportedRange:
                         pos = len(prefix)
             else:
                 # Modified prefix.
-                prefix_variants = libstrnaming.call_variants(prefix, before, location="prefix")
+                prefix_variants = libsequence.call_variants(prefix, before, location="prefix")
                 if prefix_variants[0].startswith("-0."):
                     if stretches:
                         # Rename next-to-STR insertion to an unrepeated unit.
@@ -507,7 +555,7 @@ class ReportedRange:
                     if gap_ref == gap:
                         blocks.append("[]")
                     else:
-                        this_variants = libstrnaming.call_variants(gap_ref, gap, location="suffix")
+                        this_variants = libsequence.call_variants(gap_ref, gap, location="suffix")
                         if this_variants[0].startswith("+0."):
                             # Rename initial insertion to an unrepeated unit.
                             blocks.append(this_variants[0][6:] + "[1]")
@@ -535,7 +583,7 @@ class ReportedRange:
                     blocks.append(after[:-len(suffix)] + "[1]")
             else:
                 # Modified suffix.
-                suffix_variants = libstrnaming.call_variants(suffix, after, location="suffix")
+                suffix_variants = libsequence.call_variants(suffix, after, location="suffix")
                 if suffix_variants[0].startswith("+0."):
                     # Rename next-to-STR insertion to an unrepeated unit.
                     blocks.append(suffix_variants[0][6:] + "[1]")
@@ -550,3 +598,64 @@ class ReportedRange:
         if variants:
             parts.append("_".join(variants))
         return "_".join(parts)
+
+    def from_name(self, name):
+        """Convert allele name to a raw sequence."""
+        if name == "CE?_TODO_UAS_INCOMPLETE_SEQUENCE":
+            raise ValueError("Cannot reconstruct incomplete UAS sequence")
+        if not self.library:
+            return self.denormalize_sequence(self.refseq if name == "REF" else
+                libsequence.mutate_sequence(self.refseq, name.split(), location=self.location))
+
+        allele = name.split("_")
+        if len(allele) < 2:
+            raise ValueError("Invalid allele name '%s' encountered!" % name)
+
+        # Get and mutate prefix and suffix.
+        prefix = self.library[0]["prefix"]
+        suffix = self.library[-1]["suffix"]
+        variants = [[], []]
+        for variant in allele[2:]:
+            if variant[0] == "-":
+                variants[0].append(variant)
+            elif variant[0] == "+":
+                variants[1].append(variant)
+            else:
+                raise ValueError("Unrecognised variant '%s'" % variant)
+        if variants[0]:
+            if not prefix:
+                raise ValueError(
+                    "Encountered prefix variants %r, but range has no prefix!" % (variants[0],))
+            prefix = libsequence.mutate_sequence(prefix, variants[0])
+        if variants[1]:
+            if not suffix:
+                raise ValueError(
+                    "Encountered suffix variants %r, but range has no suffix!" % (variants[1],))
+            suffix = libsequence.mutate_sequence(suffix, variants[1])
+
+        # See how many overlong gaps we're dealing with.
+        overlong_refs = [seq for part_i, part in enumerate(self.library) for seq in
+                (part.prefix if part_i else "", part["overlong_gap"]) if seq]
+        num_overlong_gaps = len(libsequence.PAT_ALLELENAME_GAP.findall(name))
+        max_overlong_gaps = len(overlong_refs)
+        if max_overlong_gaps < num_overlong_gaps:
+            raise ValueError("Invalid allele name for this range; too many overlong gaps!")
+        if num_overlong_gaps and max_overlong_gaps != num_overlong_gaps:
+            raise ValueError("Cannot reconstruct sequence; skipping only some overlong gaps "
+                "is not supported yet")
+
+        # Reconstruct the sequence.
+        seq = [prefix]
+        overlong_i = 0
+        for i, name_part in enumerate(libsequence.PAT_ALLELENAME_GAP.split(allele[1])):
+            if i % 2:
+                # Overlong gap.
+                seq.append(overlong_refs[i] if not name_part else libsequence.mutate_sequence(
+                    overlong_refs[i], name_part.split(), location=(None, 1)))
+                overlong_i += 1
+            else:
+                # Explicitly visible STR structure.
+                for block in libsequence.PAT_ALLELENAME_BLOCK.finditer(name_part):
+                    seq.append(block.group(1) * int(block.group(2)))
+        seq.append(suffix)
+        return self.denormalize_sequence("".join(seq))

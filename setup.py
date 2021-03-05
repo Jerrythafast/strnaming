@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 #
-# Copyright (C) 2020 Jerry Hoogenboom
+# Copyright (C) 2021 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -36,7 +36,11 @@ setuptools.setup(
     description="STRNaming STR Sequence Nomenclature",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/Jerrythafast/strnaming",
+    url="https://fdstools.nl",
+    project_urls={
+        "Bug Tracker": "https://github.com/Jerrythafast/STRNaming/issues",
+        "Source Code": "https://github.com/Jerrythafast/STRNaming",
+    },
     author="Jerry Hoogenboom",
     author_email="jerryhoogenboom@outlook.com",
     license="LGPLv3+",
@@ -54,7 +58,7 @@ setuptools.setup(
     python_requires='>=3',
     package_data={
         "strnaming": [
-            "data/refseqs.txt",
+            "data/refseq-*-*.txt.fq",
             "data/structures.txt",
             "data/ranges_*.txt"]
     },
