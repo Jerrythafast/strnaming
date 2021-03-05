@@ -245,6 +245,8 @@ class ReportedRangeStore:
     def add_complex_range(self, name, genome_position, *, options=None):
         """
         Store a new reported range and return its ReportedRange object.
+
+        The end positions in genome_position are inclusive.
         """
         if name in self.ranges:
             raise ValueError("Duplicate fragment name '%s'" % name)
@@ -328,7 +330,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         longest_stretch = 1
 
         self.options = {} if options is None else {key: value for key, value in options.items()}
-        self.location = (chromosome, start, end)
+        self.location = (chromosome, start, end - 1)
         self.limit = int(options.get("limit", 0))
         self.library = []
         self.block_length = 1
