@@ -58,7 +58,7 @@ setuptools.setup(
     python_requires='>=3',
     package_data={
         "strnaming": [
-            "data/refseq-*-*.txt.fq",
+            "data/refseq-*-*.txt.gz",
             "data/structures.txt",
             "data/ranges_*.txt"]
     },
