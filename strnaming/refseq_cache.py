@@ -133,14 +133,15 @@ def _load_from_ensembl(chromosome, start, end):
 def _get_chunk(chromosome, chunk, skip, length):
     """Read and return a chunked portion of reference sequence."""
     chunkfilename = CHUNKFILENAME.format(chromosome=chromosome, chunk=chunk)
-    chunkfilepath = str(BUILTINDIR / chunkfilename)
+    chunkfile = BUILTINDIR / chunkfilename
     try:
-        with gzip.open(chunkfilepath, "tr") as f:
+        with gzip.open(str(chunkfile), "tr") as f:
             f.seek(skip)
             return f.read(length)
     except FileNotFoundError:
         pass  # This chunk is not bundled with STRNaming.
-    chunkfilepath = str(CACHEDIR / chunkfilename)
+    chunkfile = CACHEDIR / chunkfilename
+    chunkfilepath = str(chunkfile)
     try:
         with gzip.open(chunkfilepath, "tr") as f:
             f.seek(skip)
@@ -161,8 +162,14 @@ def _get_chunk(chromosome, chunk, skip, length):
                     pass  # Nope, still no file. We'll make it.
                 seq = _load_from_ensembl(chromosome, chunk_offset,
                     min(chunk_offset + CHUNK_SIZE - 1, CHR_RANGES[chromosome][1]))
-                with gzip.open(chunkfilepath, "tw") as f:
+                tempfile = CACHEDIR / (chunkfilename + ".tmp")
+                with gzip.open(str(tempfile), "tw") as f:
                     f.write(seq)
+                try:
+                    tempfile.replace(chunkfile)
+                except IOError:
+                    if not chunkfile.is_file():
+                        raise
                 return seq[skip : skip + length]
         except:
             start = chunk_offset + skip
