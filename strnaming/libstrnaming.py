@@ -514,11 +514,8 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
                 yield result
             if success:
                 return  # Yielded path with anchored prefix AND suffix.
-
-        if has_prefix:
-            start_positions.remove(len_prefix)
-        if has_suffix:
-            end_positions.remove(pos_suffix)
+            # Turns out that pos_suffix is not reachable from len_prefix.
+            del ranges[0][len_prefix][pos_suffix]
 
         # If that did not work, force starting at the end of prefix
         # or finishing at the start of suffix separately.
@@ -527,12 +524,18 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
                 for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq, starttime):
                     success = True
                     yield result
+            if not success:
+                # Turns out we can't start from len_prefix.
+                start_positions.remove(len_prefix)
         if has_suffix:
             for start_pos in start_positions:
                 if pos_suffix in ranges[0][start_pos]:
                     for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq, starttime):
                         success = True
                         yield result
+            if not success:
+                # Turns out we can't end at pos_suffix.
+                end_positions.remove(pos_suffix)
         if success:
             return  # Yielded path with anchored prefix OR suffix.
 
