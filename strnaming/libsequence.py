@@ -394,7 +394,7 @@ def name_variants(template, sequence, variants, *, location=(None, 1)):
             for j in range(max(len_template, len_sequence)-1, -1, -1):
                 named_variants.append("%s%i%s%s" % (
                     template[pos_template + j] if j < len_template else "",#"-",
-                    get_genome_pos(location, x + min(j, len_template - 1)),
+                    get_genome_pos(location, pos_template + min(j, len_template - 1)),
                     ".%i" % (j - len_template + 1) if j >= len_template else "",
                     sequence[pos_sequence + j] if j < len_sequence else "DEL"))
         elif len_template == 0:
