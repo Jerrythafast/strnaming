@@ -657,8 +657,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         for i, name_part in enumerate(libsequence.PAT_ALLELENAME_GAP.split(allele[1])):
             if i % 2:
                 # Overlong gap.
-                seq.append(overlong_refs[i] if not name_part else libsequence.mutate_sequence(
-                    overlong_refs[i], name_part.split(), location=(None, 1)))
+                seq.append(overlong_refs[overlong_i] if not name_part else
+                    libsequence.mutate_sequence(
+                        overlong_refs[overlong_i], name_part.split(), location=(None, 1)))
                 overlong_i += 1
             else:
                 # Explicitly visible STR structure.
