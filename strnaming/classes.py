@@ -642,7 +642,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
         # See how many overlong gaps we're dealing with.
         overlong_refs = [seq for part_i, part in enumerate(self.library) for seq in
-                (part.prefix if part_i else "", part["overlong_gap"]) if seq]
+                (part["prefix"] if part_i else "", part["overlong_gap"]) if seq]
         num_overlong_gaps = len(libsequence.PAT_ALLELENAME_GAP.findall(name))
         max_overlong_gaps = len(overlong_refs)
         if max_overlong_gaps < num_overlong_gaps:
