@@ -465,7 +465,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             except libstrnaming.OutOfTimeException:
                 sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
                     % (normalized_seq[pos:end],))
-                path = [[normalized_seq[pos:end], 1]]
+                path = [[0, end - pos, normalized_seq[pos:end]]]
             stretches += [[s_start + pos, s_end + pos, unit, i] for s_start, s_end, unit in path]
             pos = stretches[-1][1] if path else end
             if pos >= len(normalized_seq):
