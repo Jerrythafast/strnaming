@@ -41,13 +41,12 @@ PAT_VARIANT_MT = re.compile(
     "(?P<new>[ACGT-]|DEL)$")
 
 # Complementary bases.
-COMPL = {"A": "T", "T": "A", "G": "C", "C": "G", "a": "t", "t": "a", "g": "c", "c": "g"}
+COMPL = str.maketrans("ACGTacgt", "TGCAtgca")
 
 
 def reverse_complement(sequence):
     """Return the reverse complement of the given DNA sequence."""
-    return "".join(COMPL.get(x, x) for x in reversed(sequence))
-#reverse_complement
+    return sequence[::-1].translate(COMPL)
 
 
 def align(haystack, needle, prefix=False, debug=False):
