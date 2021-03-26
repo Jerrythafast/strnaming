@@ -403,7 +403,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
             overlong_gap = libstrnaming.find_overlong_gap(structure)
 
-            units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2] - 1)
+            units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
                 for stretch in sorted(structure,
                     key=lambda stretch: (stretch[1]-stretch[0], stretch[2]), reverse=True)]
 
