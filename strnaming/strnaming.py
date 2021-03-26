@@ -142,7 +142,7 @@ def main():
             parser.error(
                 "The following arguments are not known. Please check spelling "
                 "and argument order: '%s'." % "', '".join(unknowns))
-        if args.debug:
+        if args.debug and not OPTIMIZE:
             import cProfile
             cProfile.runctx("args.func(args)", globals(), locals(), sort="tottime")
         else:

@@ -86,5 +86,8 @@ number calculated for a given sequence was one higher than it should be.
 The built-in reference sequence cache was introduced, along with the new
 mandatory ACTION command-line argument.
 
+Reference sequence analysis now guarantees that all repeat units in the
+final result are actually repeated.
+
 ### Version 1.0.0 (21 december 2020)
 Initial release of STRNaming.

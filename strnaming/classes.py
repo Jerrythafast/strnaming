@@ -20,7 +20,7 @@
 #
 import re, sys
 
-from . import length_adjustments, libsequence, libstrnaming, refseq_cache
+from . import length_adjustments, libsequence, libstrnaming, refseq_cache, reference_structures
 # TODO: Proper argument/input checking for all classes/methods!
 
 
@@ -126,9 +126,18 @@ class ReferenceStructureStore:
         if struct_input is not None:
             self.load_from_tsv(struct_input)
 
+    def load_within_range(self, chromosome, start, end):
+        """
+        Load human genome reference STR structure data.
+
+        The end position is exclusive.
+        """
+        for structure in reference_structures.get_within_range(chromosome, start, end - 1):
+            self.add_structure(chromosome, structure)
+
     def load_from_tsv(self, input):
         """
-        Load reference STR structure data.
+        Load custom reference STR structure data from an input stream.
 
         The input is a stream with one STR structure definition per line.
         An STR structure definition consists of a chromosome number,
@@ -140,7 +149,7 @@ class ReferenceStructureStore:
             chromosome, *stretches = line.rstrip("\r\n").split()
             structure = []
             for i in range(0, len(stretches), 3):
-                structure.append([int(stretches[i]), int(stretches[i+1]), stretches[i+2]])
+                structure.append([int(stretches[i]), int(stretches[i+1]), len(stretches[i+2])])
             self.add_structure(chromosome, structure)
 
     def find_in_refseq(self, chromosome, start, end, autoload=False):
@@ -148,19 +157,20 @@ class ReferenceStructureStore:
         Automatically detect STR structures in a portion of reference sequence.
 
         The end position is exclusive.
-        If autoload=True, the sequence is loaded from disk cache or
-        downloaded from Ensembl if necessary.
+        If autoload=True, the human genome reference sequence for this range is
+        loaded from disk cache or downloaded from Ensembl if necessary.
         """
         seq = self.refseq_store.get_refseq(chromosome, start, end, autoload=autoload)
         for structure in libstrnaming.recurse_collapse_repeat_units_refseq(seq, offset=start):
-            self.add_structure(chromosome, structure)
+            self.add_structure(
+                chromosome, [[s_start, s_end, len(unit)] for s_start, s_end, unit in units])
 
     def add_structure(self, chromosome, stretches):
         """
         Store an STR structure.
 
         The stretches consist of lists (or tuples) containing the start
-        position, end position (exclusive) and repeat unit sequence.
+        position, end position (exclusive) and repeat unit length.
         """
         start = stretches[0][0]
         end = stretches[-1][1]
@@ -169,10 +179,16 @@ class ReferenceStructureStore:
         else:
             structures = self.structures[chromosome]
             for i, structure in enumerate(structures):
+                if start == structure[0][0] and end == structure[-1][1]:
+                    break  # Already have this structure.
+                if end >= structure[0][0] and start <= structure[-1][1]:
+                    raise ValueError("Reference structures cannot touch or overlap")
                 if start < structure[0][0]:
+                    # New structure goes before structure i.
                     structures.insert(i, tuple(stretches))
                     break
             else:
+                # Structure goes at the end of the list.
                 structures.append(tuple(stretches))
 
     def get_structures(self, chromosome, start, end):
@@ -233,14 +249,13 @@ class ReportedRangeStore:
         for line in input:
             values = line.rstrip("\r\n").split("\t")
             options = dict(PAT_OPTIONS.findall(values[ci["options"]]))
-            reverse_complement = False
             start = int(values[ci["start"]])
             end = int(values[ci["end"]])
             if end < start:
                 start, end = end, start
-                reverse_complement = True
+                options["reverse_complement"] = True
             self.add_range(values[ci["name"]], values[ci["chromosome"]], start,
-                end + 1, reverse_complement, options=options)
+                end + 1, options=options)
 
     def add_complex_range(self, name, genome_position, *, options=None):
         """
@@ -254,16 +269,20 @@ class ReportedRangeStore:
             self.structure_store, genome_position, options=options)
         return self.ranges[name]
 
-    def add_range(self, name, chromosome, start, end, reverse_complement, *, options=None):
+    def add_range(self, name, chromosome, start, end, *, load_structures=False, options=None):
         """
         Store a new reported range and return its ReportedRange object.
 
         The end position is exclusive.
+        If load_structures=True, ReferenceStructureStore.load_within_range() is
+        called prior to configuring the ReportedRange.
         """
         if name in self.ranges:
             raise ValueError("Duplicate fragment name '%s'" % name)
+        if load_structures:
+            self.structure_store.load_within_range(chromosome, start, end)
         self.ranges[name] = ReportedRange(
-            self.structure_store, chromosome, start, end, reverse_complement, options=options)
+            self.structure_store, chromosome, start, end, options=options)
         return self.ranges[name]
 
     def get_range(self, name):
@@ -325,7 +344,7 @@ class ComplexReportedRange:
 
 
 class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid code duplication.
-    def __init__(self, structure_store, chromosome, start, end, reverse_complement, *, options=None):
+    def __init__(self, structure_store, chromosome, start, end, *, options=None):
         refseq_store = structure_store.get_refseq_store()
         longest_stretch = 1
 
@@ -337,7 +356,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         self.length_adjust = 0
         self.preinsert = ""
         self.postinsert = ""
-        self.reverse_complement = reverse_complement
+        self.reverse_complement = options.get("reverse_complement", False)
 
         # Analyse sequence to extract repeat units.
         pos = start
@@ -352,8 +371,8 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             # Drop any repeat stretches that have more than an entire repeat
             # outside either end of the reported range.
             structure = list(filter(lambda stretch: (
-                    start <= min(stretch[0] + len(stretch[2]), stretch[1] - 1) and
-                    end >= max(stretch[1] - len(stretch[2]), stretch[0] + 1)),
+                    start <= min(stretch[0] + stretch[2], stretch[1] - 1) and
+                    end >= max(stretch[1] - stretch[2], stretch[0] + 1)),
                 structure))
 
             # If we now end up with too short an STR structure, drop it.
@@ -367,26 +386,26 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 self.postinsert = refseq_store.get_refseq(chromosome, end, structure[-1][1])
 
             # Update block_length if this structure contains the longest stretch so far.
-            for stretch_start, stretch_end, unit in structure:
+            for stretch_start, stretch_end, unit_length in structure:
                 stretch_length = stretch_end - stretch_start
                 if stretch_length < longest_stretch:
                     continue
-                unit_length = len(unit)
                 if stretch_length == longest_stretch and unit_length < self.block_length:
                     continue
                 longest_stretch = stretch_length
                 self.block_length = unit_length
 
-            prefix = refseq_store.get_refseq(chromosome, pos, structure[0][0]) if pos < structure[0][0] else ""
+            prefix = refseq_store.get_refseq(
+                chromosome, pos, structure[0][0]) if pos < structure[0][0] else ""
             if self.library:
-                if not prefix:
-                    # TODO: Block this from happening in StructureStore.
-                    sys.stderr.write("BadLibrary=%r\nNextStructure=%r\n" % (library, structure))
-                    raise ValueError("Unseparated structure encountered")
                 self.library[-1]["suffix"] = prefix
             pos = structure[-1][1]
 
             overlong_gap = libstrnaming.find_overlong_gap(structure)
+
+            units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2] - 1)
+                for stretch in sorted(structure,
+                    key=lambda stretch: (stretch[1]-stretch[0], stretch[2]), reverse=True)]
 
             self.library.append({
                 # Sequence included in the range before/after the STR structure.
@@ -394,11 +413,11 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 "suffix": "",
 
                 # Sequence of the largest interruption within the STR structure.
-                "overlong_gap": refseq_store.get_refseq(chromosome, overlong_gap[0], overlong_gap[1]) if overlong_gap else "",
+                "overlong_gap": refseq_store.get_refseq(
+                    chromosome, overlong_gap[0], overlong_gap[1]) if overlong_gap else "",
 
                 # The repeat units in the STR structure.
-                "units":  [stretch[2] for stretch in sorted(structure,
-                    key=lambda stretch: (stretch[1]-stretch[0], len(stretch[2])), reverse=True)]
+                "units": units
             })
 
         if self.library:

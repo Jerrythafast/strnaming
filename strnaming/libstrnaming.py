@@ -884,7 +884,8 @@ def collapse_repeat_units_refseq(seq, *, allow_close=0):
             previous_paths.add(this_path)
 
             # Repeat find_everything() and get_best_path(), now treating the used units as preferred.
-            used_units = set(unit for start, end, unit in path)
+            # Singletons in the path are not counted as used units.
+            used_units = set(unit for start, end, unit in path if end - start > len(unit))
             unit_locations = {unit: [(0, len(seq))] for unit in used_units}
             previous_path = path
             large_gap = find_overlong_gap(path)
