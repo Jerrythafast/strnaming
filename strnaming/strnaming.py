@@ -30,7 +30,7 @@ import textwrap
 #import cProfile  # Imported only if the -d/--debug option is specified
 
 
-from . import usage, version, classes, refseq_cache
+from . import usage, version, classes, refseq_cache, html
 
 
 OPTIMIZE = False  # FIXME; temp. Turn this to 'True' to run optimize.py.
@@ -64,6 +64,12 @@ def run_strnaming(arguments):
     structure_store = classes.ReferenceStructureStore(stream_package_data("structures.txt"))
     ranges_store = classes.ReportedRangeStore(
         stream_package_data("ranges_%s.txt" % arguments.ranges), structure_store=structure_store)
+    if arguments.html:
+        html.make_page(ranges_store, arguments.instream, arguments.outstream,
+            page_headers=arguments.html_page_headers,
+            marker_headers=arguments.html_marker_headers,
+            marker_refseqs=arguments.html_marker_refseqs)
+        return
     for marker, sequence in (line.rstrip("\r\n").split() for line in arguments.instream):
         arguments.outstream.write("%s\t%s\n" % (marker, ranges_store.get_range(marker).get_name(sequence)))
         if arguments.unbuffered:
@@ -120,6 +126,15 @@ def main():
         subparser.add_argument("outstream", metavar="OUT", nargs="?", type=argparse.FileType("tw"),
             default=sys.stdout,
             help="output file, always uses a tab character as separator (default: write to stdout)")
+        html_group = subparser.add_argument_group("colorized output (HTML format)")
+        html_group.add_argument("--html", action="store_true",
+            help="write an HTML-formatted output file with colorized repeats")
+        html_group.add_argument("--html-no-head", dest="html_page_headers", action="store_false",
+            help="exclude <head> section from HTML output; only write visible page content")
+        html_group.add_argument("--html-no-headings", dest="html_marker_headers",
+            action="store_false", help="exclude per-marker headings in the HTML output")
+        html_group.add_argument("--html-no-refseq", dest="html_marker_refseqs",
+            action="store_false", help="exclude marker reference sequence in the HTML output")
         subparser.set_defaults(func=run_strnaming)
         subparser = subparsers.add_parser("refseq-cache", formatter_class=_HelpFormatter,
             help="download and cache reference sequence",

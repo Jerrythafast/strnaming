@@ -6,9 +6,12 @@ STRNaming Changelog
   for a given sequence was one higher than it should be.
 * Reference sequence analysis now guarantees that all repeat units in the
   final result are actually repeated.
+* Reference repeat units only found outside the reported range are now included
+  in the list of preferred units when generating allele names.
 * New built-in reference sequence cache and reference structure plumbing.
 * New mandatory ACTION command-line argument to choose between allele naming
   and reference sequence downloading.
+* New options for generating HTML-formatted output with repeat unit coloring.
 * The ReferenceSequenceStore.add_refseq() function can now handle overlapping
   ranges of reference sequence.
 * Improved support for naming non-STR ranges, including mtDNA.

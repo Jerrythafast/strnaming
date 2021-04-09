@@ -89,5 +89,13 @@ mandatory ACTION command-line argument.
 Reference sequence analysis now guarantees that all repeat units in the
 final result are actually repeated.
 
+Reference repeat units only found outside the reported range are now included
+in the list of preferred units when generating allele names. This change
+improves naming stability when a significant part of the reference STR
+structure lies outside the reported range.
+
+Colored output in HTML format is now available by using the --html command-line
+argument.
+
 ### Version 1.0.0 (21 december 2020)
 Initial release of STRNaming.

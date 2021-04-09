@@ -20,7 +20,7 @@
 #
 import re, sys
 
-from . import length_adjustments, libsequence, libstrnaming, refseq_cache, reference_structures
+from . import length_adjustments, libsequence, libstrnaming, refseq_cache, reference_structures, html
 # TODO: Proper argument/input checking for all classes/methods!
 
 
@@ -350,13 +350,13 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
         self.options = {} if options is None else {key: value for key, value in options.items()}
         self.location = (chromosome, start, end - 1)
-        self.limit = int(options.get("limit", 0))
+        self.limit = int(self.options.get("limit", 0))
         self.library = []
         self.block_length = 1
         self.length_adjust = 0
         self.preinsert = ""
         self.postinsert = ""
-        self.reverse_complement = options.get("reverse_complement", False)
+        self.reverse_complement = self.options.get("reverse_complement", False)
 
         # Analyse sequence to extract repeat units.
         pos = start
@@ -367,6 +367,12 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
             # Store end position of last structure for later suffix/postinsert adjustment.
             last_structure_end = structure[-1][1]
+
+            # Find unique repeat units.
+            units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
+                for stretch in sorted(structure,
+                    key=lambda stretch: (stretch[1]-stretch[0], stretch[2]), reverse=True)]
+            units = [unit for index, unit in enumerate(units) if units.index(unit) == index]
 
             # Drop any repeat stretches that have more than an entire repeat
             # outside either end of the reported range.
@@ -403,10 +409,6 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
             overlong_gap = libstrnaming.find_overlong_gap(structure)
 
-            units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
-                for stretch in sorted(structure,
-                    key=lambda stretch: (stretch[1]-stretch[0], stretch[2]), reverse=True)]
-
             self.library.append({
                 # Sequence included in the range before/after the STR structure.
                 "prefix": prefix,
@@ -416,7 +418,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 "overlong_gap": refseq_store.get_refseq(
                     chromosome, overlong_gap[0], overlong_gap[1]) if overlong_gap else "",
 
-                # The repeat units in the STR structure.
+                # The repeat units in the reference STR structure.
                 "units": units
             })
 
@@ -445,9 +447,11 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         return "%s%s%s" % (sign, length // self.block_length,
             "." + str(length % self.block_length) if length % self.block_length else "")
 
-    def normalize_sequence(self, seq):
+    def normalize_sequence(self, seq, *, lowercase_inserts=False):
         if self.reverse_complement:
             seq = libsequence.reverse_complement(seq)
+        if lowercase_inserts:
+            return self.preinsert.lower() + seq + self.postinsert.lower()
         return self.preinsert + seq + self.postinsert
 
     def denormalize_sequence(self, seq):
@@ -493,14 +497,43 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 break
         return stretches
 
-    def get_tssv(self, seq, *, as_string=True, normalized_seq=None):
+    def color_template_for(self, unit, library_part, *,
+            num_classes=html.NUM_CLASSES, span_template=html.SPAN_TEMPLATE):
+        try:
+            return span_template % (self.library[library_part]["units"].index(unit) % num_classes)
+        except ValueError:
+            return "%s"  # Not a reference unit.
+
+    def colorize_sequence(self, seq, *, normalized_seq=None, stretches=None):
+        if normalized_seq is None:
+            normalized_seq = self.normalize_sequence(seq, lowercase_inserts=True)
+        if not self.library:
+            return normalized_seq
+        if stretches is None:
+            stretches = self.get_stretches(seq, normalized_seq=normalized_seq.upper())
+        pos = 0
+        colored = []
+        for start, end, unit, i in stretches:
+            if start > pos:
+                # Insert a gap or prefix.
+                colored.append(normalized_seq[pos : start])
+            colored.append(self.color_template_for(unit, i) % normalized_seq[start : end])
+            pos = end
+        if pos < len(normalized_seq):
+            # Add the suffix.
+            colored.append(normalized_seq[pos:])
+        return "".join(colored)
+
+    def get_tssv(self, seq, *, as_string=True, normalized_seq=None, stretches=None):
         if normalized_seq is None:
             normalized_seq = self.normalize_sequence(seq)
         if not self.library:
             return normalized_seq + "(1)" if as_string else [[normalized_seq, 1, None]]
+        if stretches is None:
+            stretches = self.get_stretches(seq, normalized_seq=normalized_seq)
         pos = 0
         tssv_seq = []
-        for start, end, unit, i in self.get_stretches(seq, normalized_seq=normalized_seq):
+        for start, end, unit, i in stretches:
             if start > pos:
                 # Insert a gap or prefix.
                 tssv_seq.append([normalized_seq[pos : start], 1, i])
@@ -518,7 +551,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         return self.denormalize_sequence("".join(block[0] * int(block[1])
             for block in libsequence.PAT_TSSV_BLOCK.findall(tssv)))
 
-    def get_name(self, seq, *, normalized_seq=None):
+    def get_name(self, seq, *, color=False, normalized_seq=None, stretches=None):
         if self.limit and len(seq) == self.limit:
             # TODO: Give sequence-descriptive name nonetheless!
             return "CE?_TODO_UAS_INCOMPLETE_SEQUENCE"
@@ -531,7 +564,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 self.refseq, normalized_seq, location=self.location)
             return " ".join(variants) or "REF"
 
-        stretches = self.get_stretches(seq, normalized_seq=normalized_seq)
+        if stretches is None:
+            stretches = self.get_stretches(seq, normalized_seq=normalized_seq)
+
         prefix = self.library[0]["prefix"]
         suffix = self.library[-1]["suffix"]
         blocks = []
@@ -594,7 +629,8 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                             blocks.append(gap + "[1]")
                 else:
                     blocks.append(gap + "[1]")
-            blocks.append("%s[%i]" % (unit, (end - start) // len(unit)))
+            block = "%s[%i]" % (unit, (end - start) // len(unit))
+            blocks.append(self.color_template_for(unit, i) % block if color else block)
             prev_i = i
             pos = end
 
