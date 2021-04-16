@@ -41,7 +41,7 @@ PAT_VARIANT_MT = re.compile(
     "(?P<new>[ACGT-]|DEL)$")
 
 # Complementary bases.
-COMPL = str.maketrans("ACGTacgt", "TGCAtgca")
+COMPL = str.maketrans("ACGTUMKRYBDHVacgtumkrybdhv", "TGCAAKMYRVHDBtgcaakmyrvhdb")
 
 
 def reverse_complement(sequence):
