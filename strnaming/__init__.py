@@ -24,7 +24,7 @@ An algorithm for generating simple, informative names for sequenced STR
 alleles in a standardised and automated manner.
 """
 
-__version_info__ = ('1', '0', '1')
+__version_info__ = ('1', '1', '0')
 __version__ = '.'.join(__version_info__)
 usage = __doc__.split("\n\n\n")
 

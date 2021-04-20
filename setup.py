@@ -55,7 +55,7 @@ setuptools.setup(
     keywords='bioinformatics forensics NGS MPS DNA sequencing STR nomenclature',
     packages=setuptools.find_packages(),
     install_requires=[],
-    python_requires='>=3',
+    python_requires='>=3.5',
     package_data={
         "strnaming": [
             "data/refseq-*-*.txt.gz",
