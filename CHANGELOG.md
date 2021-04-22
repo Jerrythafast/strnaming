@@ -1,7 +1,7 @@
 STRNaming Changelog
 ===================
 
-### Version 1.0.1 (in progress)
+### Version 1.1.0 (in progress)
 * Fixed HPRTB allele numbering: previously, the CE allele number calculated
   for a given sequence was one higher than it should be.
 * Reference sequence analysis now guarantees that all repeat units in the

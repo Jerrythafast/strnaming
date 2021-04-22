@@ -79,7 +79,7 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
-### Version 1.0.1 (in progress)
+### Version 1.1.0 (in progress)
 Fixed a major issue with HPRTB allele numbering: previously, the CE allele
 number calculated for a given sequence was one higher than it should be.
 
