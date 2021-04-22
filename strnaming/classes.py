@@ -163,7 +163,7 @@ class ReferenceStructureStore:
         seq = self.refseq_store.get_refseq(chromosome, start, end, autoload=autoload)
         for structure in libstrnaming.recurse_collapse_repeat_units_refseq(seq, offset=start):
             self.add_structure(
-                chromosome, [[s_start, s_end, len(unit)] for s_start, s_end, unit in units])
+                chromosome, [[s_start, s_end, len(unit)] for s_start, s_end, unit in structure])
 
     def add_structure(self, chromosome, stretches):
         """
