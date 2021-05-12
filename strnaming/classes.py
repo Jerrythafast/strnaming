@@ -474,12 +474,16 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             suffix = part["suffix"]
             if i < len(self.library) - 1:
                 # Find end position of this infix.
+                # If suffix in part["prefix"], look beyond it!
+                skip = part["prefix"].rfind(suffix) + 1
+                pos += skip
                 try:
                     end = normalized_seq.index(suffix, pos) + len(suffix)
                 except ValueError:
                     suffix_start, suffix_end, score = libsequence.align(normalized_seq[pos:], suffix)
                     end = pos + suffix_end
                     suffix = normalized_seq[pos + suffix_start : end]
+                pos -= skip
             else:
                 end = len(normalized_seq)
             try:
