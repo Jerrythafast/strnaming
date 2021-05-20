@@ -243,19 +243,21 @@ def align_affine(template, sequence, *, match_score=1, mismatch_score=-3, gap_op
 
         match = match_score if template[x - 1] == sequence[y - 1] else mismatch_score
 
-        options_gap1 = (
-            matrix_match[i - 1] + gap_open_score,
-            matrix_gap1[i - 1] + gap_extend_score)
-        matrix_gap1[i] = max(options_gap1)
-        if options_gap1[0] > options_gap1[1]:
+        gap_open = matrix_match[i - 1] + gap_open_score
+        gap_extend = matrix_gap1[i - 1] + gap_extend_score
+        if gap_open > gap_extend:
             matrix_direction[i] |= A_HORZ_O  # Must exit M_GAP1 here.
+            matrix_gap1[i] = gap_open
+        else:
+            matrix_gap1[i] = gap_extend
 
-        options_gap2 = (
-            matrix_match[i - row_offset] + gap_open_score,
-            matrix_gap2[i - row_offset] + gap_extend_score)
-        matrix_gap2[i] = max(options_gap2)
-        if options_gap2[0] > options_gap2[1]:
+        gap_open = matrix_match[i - row_offset] + gap_open_score
+        gap_extend = matrix_gap2[i - row_offset] + gap_extend_score
+        if gap_open > gap_extend:
             matrix_direction[i] |= A_VERT_O  # Must exit M_GAP2 here.
+            matrix_gap2[i] = gap_open
+        else:
+            matrix_gap2[i] = gap_extend
 
         options = (
             matrix_match[i - 1 - row_offset] + match,
