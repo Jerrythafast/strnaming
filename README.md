@@ -94,6 +94,9 @@ in the list of preferred units when generating allele names. This change
 improves naming stability when a significant part of the reference STR
 structure lies outside the reported range.
 
+STRNaming will no longer consider names that include an interruption of which
+the sequence is equal to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
+
 Colored output in HTML format is now available by using the --html command-line
 argument.
 

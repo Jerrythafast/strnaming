@@ -328,24 +328,30 @@ def get_scaffolds(repeats):
 #get_scaffolds
 
 
-def get_gaps(repeats, scaffolds):
+def get_gaps(repeats, scaffolds, seq):
     short_gaps = {}
     all_gaps = {}
-    for start in set(repeat[1] for repeat in repeats):
-        for end in set(repeat[0] for repeat in repeats):
+    for _, start, unit1, _ in repeats:
+        for end, _, unit2, _ in repeats:
             size = end - start
             if size <= 0 or (start in scaffolds and end in scaffolds[start]):
-                continue  # Illegal gap: shoots hole in scaffold.
-            if size <= NAMING_OPTIONS["max_long_gap"]:
-                try:
-                    all_gaps[start].add(end)
-                except KeyError:
-                    all_gaps[start] = {end}
+                continue  # Illegal gap: can be filled with scaffold.
+            if size > NAMING_OPTIONS["max_long_gap"]:
+                continue  # Gap is too large.
+            gapseq = seq[start : end]
+            if size == len(unit1) and gapseq == unit1:
+                continue  # Illegal gap: same as previous unit.
+            if size == len(unit2) and gapseq == unit2:
+                continue  # Illegal gap: same as next unit.
+            try:
+                all_gaps[start][end] = gapseq
+            except KeyError:
+                all_gaps[start] = {end: gapseq}
             if size <= NAMING_OPTIONS["max_gap"]:
                 try:
-                    short_gaps[start].add(end)
+                    short_gaps[start][end] = gapseq
                 except KeyError:
-                    short_gaps[start] = {end}
+                    short_gaps[start] = {end: gapseq}
     return short_gaps, all_gaps
 #get_gaps
 
@@ -428,7 +434,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
             continue
 
         # Choose the next gap and continue the structure on the other side.
-        for next_pos in gaps[gap_pos]:
+        for next_pos, gapseq in gaps[gap_pos].items():
             gap_len = next_pos - gap_pos
             min_singleton_len = gap_len if prev_gap_len == -1 or gap_len < prev_gap_len else prev_gap_len
             remaining_ranges = ranges[2 if gap_len <= NAMING_OPTIONS["max_gap"] else 3]
@@ -440,6 +446,8 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
 
             for scaffold, longest_stretch2, anchored2, orphans2, max_gap_len in scaffold_list:
                 last_unit = scaffold[-1][2]
+                if gapseq == last_unit:
+                    continue  # Gap cannot be equal to foregoing unit.
                 if not prev_unit and not scaffold[0][3][3]:
                     continue  # Can't start with this non-ref repeat unit.
                 if max_gap_len and max_gap_len < min_singleton_len and not last_unit == prev_unit:
@@ -450,7 +458,8 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
                     for substructure, longest_stretch1 in recurse_gen_path(next_pos, end_pos,
                             scaffolds, remaining_ranges, starttime,
                             now_anchored, now_orphaned, gap_len, last_unit):
-                        yield (scaffold + substructure, max(longest_stretch1, longest_stretch2))
+                        if not gapseq == substructure[0][2]:
+                            yield (scaffold + substructure, max(longest_stretch1, longest_stretch2))
 #recurse_gen_path
 
 
@@ -483,7 +492,7 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime)
 
 def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
     scaffolds = get_scaffolds(repeats)
-    short_gaps, all_gaps = get_gaps(repeats, scaffolds)
+    short_gaps, all_gaps = get_gaps(repeats, scaffolds, seq)
     ranges = get_ranges(scaffolds, short_gaps, all_gaps, is_refseq)
 
     # A *preferred* repeat unit is required as the starter/finisher.
