@@ -86,6 +86,10 @@ Naming of some loci may have been updated as a result of bug fixes.
 * Allele names are now permitted to contain repeats of a unit that exceeds the
   dominant unit length of a locus. This change greatly improves naming of some
   complex Y-STRs.
+* Short repeat stretches that only partially overlap with a significant repeat
+  of a longer unit are no longer discarded. This change may introduce short
+  repeats adjacent to longer repeats of a longer unit, which were previously
+  'missed' by STRNaming.
 * Reference sequence analysis now guarantees that all repeat units in the
   final result are actually repeated.
 * Reference repeat units only found outside the reported range are now included

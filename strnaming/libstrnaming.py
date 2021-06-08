@@ -625,13 +625,8 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
                     return False  # Not a longer repeat unit.
                 if match_len // len(unit) > MANY_TIMES:
                     return False  # This repeat is itself significant.
-                if max(match_start, longer_unit[0]) >= min(match_start + match_len, longer_unit[1]):
+                if match_start < longer_unit[0] or match_start + match_len > longer_unit[1]:
                     return False  # The longer unit is not overlapping this repeat.
-                if unit not in longer_unit[2] + longer_unit[2]:
-                    return False  # The longer repeat unit does not contain the current one.
-                repeated_times = (longer_unit[1] - longer_unit[0]) // len(longer_unit[2])
-                if repeated_times < MANY_TIMES or (repeated_times == MANY_TIMES and unit not in longer_unit[2]):
-                    return False  # The longer unit is not repeated a lot.
                 # The longer unit is repeated a lot; ignore the current one.
                 return True
             if not any(is_overshadowed_by(longer_unit) for longer_unit in repeats):

@@ -6,6 +6,8 @@ STRNaming Changelog
   for a given sequence was one higher than it should be.
 * Allele names are now permitted to contain repeats of a unit that exceeds the
   dominant unit length of a locus.
+* Short repeat stretches that only partially overlap with a significant repeat
+  of a longer unit are no longer discarded.
 * Reference sequence analysis now guarantees that all repeat units in the
   final result are actually repeated.
 * Reference repeat units only found outside the reported range are now included
