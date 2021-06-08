@@ -80,25 +80,26 @@ These are the files to be copied to the offline system for STRNaming to work.
 Release Notes
 -------------
 ### Version 1.1.0 (in progress)
-Fixed a major issue with HPRTB allele numbering: previously, the CE allele
-number calculated for a given sequence was one higher than it should be.
+Naming of some loci may have been updated as a result of bug fixes.
+* Fixed a major issue with HPRTB allele numbering: previously, the CE allele
+  number calculated for a given sequence was one higher than it should be.
+* Allele names are now permitted to contain repeats of a unit that exceeds the
+  dominant unit length of a locus. This change greatly improves naming of some
+  complex Y-STRs.
+* Reference sequence analysis now guarantees that all repeat units in the
+  final result are actually repeated.
+* Reference repeat units only found outside the reported range are now included
+  in the list of preferred units when generating allele names. This change
+  improves naming stability when a significant part of the reference STR
+  structure lies outside the reported range.
+* STRNaming will no longer consider names that include an interruption of which
+  the sequence is equal to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
 
-The built-in reference sequence cache was introduced, along with the new
-mandatory ACTION command-line argument.
-
-Reference sequence analysis now guarantees that all repeat units in the
-final result are actually repeated.
-
-Reference repeat units only found outside the reported range are now included
-in the list of preferred units when generating allele names. This change
-improves naming stability when a significant part of the reference STR
-structure lies outside the reported range.
-
-STRNaming will no longer consider names that include an interruption of which
-the sequence is equal to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
-
-Colored output in HTML format is now available by using the --html command-line
-argument.
+New features:
+* The built-in reference sequence cache was introduced, along with the new
+  mandatory ACTION command-line argument.
+* Colored output in HTML format is now available by using the --html
+  command-line argument.
 
 ### Version 1.0.0 (21 december 2020)
 Initial release of STRNaming.

@@ -468,22 +468,16 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime)
     for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime):
         path, (longest_stretch, block_length) = result
 
-        # The path is invalid if it uses a repeat unit that is longer
-        # than the dominant block length, or it has only singletons of a
-        # non-preferred unit.
-        invalid_unit_length = False
+        # The path is invalid if it has only singletons of a non-preferred unit.
         repeated_units = set()
         singletons = set()
         for start, end, unit, (repeat_length, unit_length, anchor, preferred) in path:
-            if unit_length > block_length:
-                invalid_unit_length = True
-                break
             if is_refseq or not preferred:
                 if repeat_length > unit_length:
                     repeated_units.add(unit)
                 else:
                     singletons.add(unit)
-        if not invalid_unit_length and not singletons - repeated_units:
+        if not singletons - repeated_units:
             if not is_refseq or longest_stretch >= block_length * MANY_TIMES:
                 # For reference sequences, the longest stretch must be significant.
                 yield result
