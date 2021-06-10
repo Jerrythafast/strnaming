@@ -594,7 +594,7 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
 
         # Compile a list of all places where this unit is found.
         # len(stretch) must be >= 4.
-        # NOTE: Hardcoded minimum length.
+        # NOTE: Hardcoded minimum length; singletons of 3nt or shorter are not included.
         regex = re.compile("(" + unit + "){" + str(4 if len(unit) < 2 else 2 if len(unit) < 4 or not allow_one else 1) + ",}")
 
         pos = 0
@@ -605,7 +605,8 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
             matches.append([pos + match.start(), len(match.group(0))])
             pos += match.start() + len(match.group(0)) - len(unit) + 1
 
-        # Try bridging gaps to a single additional unit.
+        # Try bridging gaps to a single additional unit for units of 3nt or longer.
+        # NOTE: If allow_one is also True, this only has an effect if unit_length=3.
         if allow_bridges and len(unit) > 2 and (not allow_one or len(unit) < 4):
             for start, length in tuple(matches):
                 end = start + length
@@ -617,20 +618,13 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
                     matches.append([end + len(unit), len(unit)])
 
         for match_start, match_len in matches:
-            # Ignore sub-repeats within significant stretches of a longer unit.
+            # Ignore short repeats that completely overlap a repeat of a longer unit.
             # Using those is not expected to give a high score, but their
             # presence may greatly increase calculation time.
-            def is_overshadowed_by(longer_unit):
-                if len(longer_unit[2]) <= len(unit):
-                    return False  # Not a longer repeat unit.
-                if match_len // len(unit) > MANY_TIMES:
-                    return False  # This repeat is itself significant.
-                if match_start < longer_unit[0] or match_start + match_len > longer_unit[1]:
-                    return False  # The longer unit is not overlapping this repeat.
-                # The longer unit is repeated a lot; ignore the current one.
-                return True
-            if not any(is_overshadowed_by(longer_unit) for longer_unit in repeats):
-                # There is no significat repeat of a longer unit that overlaps with this match.
+            if match_len // len(unit) > MANY_TIMES or not any(
+                        len(unit) < len(o_unit) and
+                        match_start >= o_start and match_start + match_len <= o_end
+                    for o_start, o_end, o_unit in repeats):
                 repeats.append([match_start, match_start + match_len, unit])
 
     # Sort repeats.
