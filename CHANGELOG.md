@@ -14,6 +14,8 @@ STRNaming Changelog
   final result are actually repeated.
 * Reference repeat units only found outside the reported range are now included
   in the list of preferred units when generating allele names.
+* Mononucleotide stretches of 5nt are no longer considered a valid repeat when
+  overlapped completely by a hexanucleotide repeat unit.
 * Don't consider names that include an interruption of which the sequence is equal
   to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
 * New built-in reference sequence cache and reference structure plumbing.

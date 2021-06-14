@@ -619,14 +619,13 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
                     matches.append([end + len(unit), len(unit)])
 
         for match_start, match_len in matches:
-            # Ignore short repeats that completely overlap a repeat of a longer unit.
+            # Ignore repeats that completely overlap a repeat of a longer unit.
             # Using those is not expected to give a high score, but their
             # presence may greatly increase calculation time.
-            if match_len // len(unit) > MANY_TIMES or not any(
-                        len(unit) < len(o_unit) and
-                        match_start >= o_start and match_start + match_len <= o_end
+            match_end = match_start + match_len
+            if not any(len(unit) < len(o_unit) and match_start >= o_start and match_end <= o_end
                     for o_start, o_end, o_unit in repeats):
-                repeats.append([match_start, match_start + match_len, unit])
+                repeats.append([match_start, match_end, unit])
 
     # Sort repeats.
     repeats.sort()
