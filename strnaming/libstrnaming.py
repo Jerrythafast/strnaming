@@ -736,12 +736,16 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
                     if overlap_len % len(repeats[j][2]) == 0:
                         repeat_trims[j][0].add(overlap_len)
     for i in range(len(repeat_trims)):
+        start, end, unit = repeats[i]
+        # Don't trim unpreferred units such that they violate min_repeat_length.
+        # For ref units, a lower threshold of 4 nt is applied.
+        # NOTE: hardcoded number.
+        min_length = 4 if unit in preferred_units else NAMING_OPTIONS["min_repeat_length"]
         for trim_start in repeat_trims[i][0]:
             for trim_end in repeat_trims[i][1]:
-                # The -4 in the next line enforces the minimum repeat stretch length of 4nt here.
-                # NOTE: hardcoded number.
-                if (trim_start or trim_end) and repeats[i][1]-repeats[i][0]-4 > trim_start + trim_end:
-                    repeats.append([repeats[i][0] + trim_start, repeats[i][1] - trim_end, repeats[i][2]])
+                trim_length = trim_start + trim_end
+                if trim_length and end - start - trim_length >= min_length:
+                    repeats.append([start + trim_start, end - trim_end, unit])
     repeats.sort()
 
     # Deduplicate repeats.

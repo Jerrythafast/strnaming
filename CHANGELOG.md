@@ -14,6 +14,9 @@ STRNaming Changelog
   final result are actually repeated.
 * Reference repeat units only found outside the reported range are now included
   in the list of preferred units when generating allele names.
+* Stretches of reference repeat units may now be trimmed down to 4 nt (was 5) to
+  combine them with other overlapping stretches; stretches of non-reference
+  repeat units now have a higher minimum of 8 nt (up from 5).
 * Mononucleotide stretches of 5nt are no longer considered a valid repeat when
   overlapped completely by a hexanucleotide repeat unit.
 * Don't consider names that include an interruption of which the sequence is equal
