@@ -631,8 +631,8 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
     # Sort repeats.
     repeats.sort()
 
-    # Remove singletons that fall completely within a significant repeat stretch
-    # of a shorter unit that is embedded in the singleton.
+    # Remove singletons that completely overlap a significant repeat stretch
+    # of a shorter unit that is embedded in the singleton. (Can only occur with singletons.)
     # For example, remove singletons of 'ACTA' within a significant repeat stretch of 'ACT'.
     i = 0
     while i < len(repeats):
@@ -640,7 +640,7 @@ def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
                 any(len(o_unit) < len(repeats[i][2]) and  # Other is shorter unit
                     repeats[i][0] >= o_start and repeats[i][1] <= o_end and  # Overlap
                     (o_end - o_start) // len(o_unit) > MANY_TIMES  # Other is significant repeat
-                    for j, (o_start, o_end, o_unit) in enumerate(repeats))):
+                    for o_start, o_end, o_unit in repeats)):
             # The current (singleton) unit overlaps completely with a significant repeat.
             del repeats[i]
         else:
