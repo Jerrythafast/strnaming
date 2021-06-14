@@ -8,6 +8,8 @@ STRNaming Changelog
   dominant unit length of a locus.
 * Short repeat stretches that only partially overlap with a significant repeat
   of a longer unit are no longer discarded.
+* Fixed bug that disallowed making interruptions which could be filled exactly
+  with an 'orphan' repeat, thereby forcing the use of a compatible 'anchor'.
 * Reference sequence analysis now guarantees that all repeat units in the
   final result are actually repeated.
 * Reference repeat units only found outside the reported range are now included

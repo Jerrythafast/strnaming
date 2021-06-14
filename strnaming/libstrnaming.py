@@ -334,8 +334,9 @@ def get_gaps(repeats, scaffolds, seq):
     for _, start, unit1, _ in repeats:
         for end, _, unit2, _ in repeats:
             size = end - start
-            if size <= 0 or (start in scaffolds and end in scaffolds[start]):
-                continue  # Illegal gap: can be filled with scaffold.
+            if size <= 0 or (start in scaffolds and end in scaffolds[start]
+                    and any(not scaffold[3] for scaffold in scaffolds[start][end])):
+                continue  # Illegal gap: can be filled with scaffold without orphans.
             if size > NAMING_OPTIONS["max_long_gap"]:
                 continue  # Gap is too large.
             gapseq = seq[start : end]
