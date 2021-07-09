@@ -80,7 +80,9 @@ These are the files to be copied to the offline system for STRNaming to work.
 Release Notes
 -------------
 ### Version 1.1.0 (in progress)
-Naming of some loci may have been updated as a result of bug fixes.
+Naming of some loci has been updated as a result of bug fixes and improvements
+to the algorithm. Scoring criteria have been updated to minimize unintended
+side-effects of these changes.
 * Fixed a major issue with HPRTB allele numbering: previously, the CE allele
   number calculated for a given sequence was one higher than it should be.
 * Allele names are now permitted to contain repeats of a unit that exceeds the

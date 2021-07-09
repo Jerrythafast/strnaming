@@ -2,6 +2,7 @@ STRNaming Changelog
 ===================
 
 ### Version 1.1.0 (in progress)
+* Updated scoring criteria to minimize unintended side-effects of other changes.
 * Fixed HPRTB allele numbering: previously, the CE allele number calculated
   for a given sequence was one higher than it should be.
 * Allele names are now permitted to contain repeats of a unit that exceeds the

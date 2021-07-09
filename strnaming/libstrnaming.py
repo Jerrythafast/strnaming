@@ -47,16 +47,16 @@ NAMING_OPTIONS = {
     "max_unit_length": 6,
     "max_gap": 8,
     "max_long_gap": 20,
-    "bases_covered_factor": 0.15874379,
-    "units_used_factor": -10.1786473,
-    "units_used_multiplier": 1.09052798,
-    "repeats_factor": 3.49237881,
-    "preferred_repeats_factor": 0.65040629,
-    "interruptions_factor": -9.56645361,
-    "interruptions_multiplier": 1.41646677,
-    "nice_interruptions_factor": 7.27483601,
-    "interruption_bases_factor": -0.56939138,
-    "prefix_suffix_factor": -1.785957
+    "bases_covered_factor": 0.38033472,
+    "units_used_factor": -8.8979406,
+    "units_used_multiplier": 1.28993249,
+    "repeats_factor": 2.12807513,
+    "preferred_repeats_factor": 1.62639518,
+    "interruptions_factor": -10.61080182,
+    "interruptions_multiplier": 1.09212922,
+    "nice_interruptions_factor": 7.23604507,
+    "interruption_bases_factor": -0.46646098,
+    "prefix_suffix_factor": -1.37392421
 }
 
 
