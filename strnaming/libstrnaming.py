@@ -585,44 +585,30 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_g
 #get_best_path
 
 
-def find_repeat_stretches(seq, units, allow_bridges, allow_one, repeats=None):
+def find_repeat_stretches(seq, units, allow_one, repeats=None):
     """Return a list of repeat stretches. The input units must be sorted by decreasing length."""
     # Find all stretches of each repeated unit.
     if repeats is None:
         repeats = []
     for unit in units:
-        matches = []
 
         # Compile a list of all places where this unit is found.
-        # len(stretch) must be >= 4.
-        # NOTE: Hardcoded minimum length; singletons of 3nt or shorter are not included.
-        regex = re.compile("(" + unit + "){" + str(4 if len(unit) < 2 else 2 if len(unit) < 4 or not allow_one else 1) + ",}")
+        # len(stretch) must be >= 3.
+        # NOTE: Hardcoded minimum length; singletons of 2nt or shorter are not included.
+        regex = re.compile("(" + unit + "){" + str(3 if len(unit) == 1 else 2 if len(unit) == 2 or not allow_one else 1) + ",}")
 
         pos = 0
         while True:
             match = regex.search(seq[pos:])
             if match is None:
                 break
-            matches.append([pos + match.start(), len(match.group(0))])
-            pos += match.start() + len(match.group(0)) - len(unit) + 1
+            match_start = pos + match.start()
+            match_end = match_start + len(match.group(0))
+            pos = match_end - len(unit) + 1
 
-        # Try bridging gaps to a single additional unit for units of 3nt or longer.
-        # NOTE: If allow_one is also True, this only has an effect if unit_length=3.
-        if allow_bridges and len(unit) > 2 and (not allow_one or len(unit) < 4):
-            for start, length in tuple(matches):
-                end = start + length
-                if start >= len(unit)*2 and seq[start - len(unit)*2 : start - len(unit)] == unit and not seq[:start - len(unit)*2].endswith(unit):
-                    # Bridge one unit before stretch.
-                    matches.append([start - len(unit)*2, len(unit)])
-                if end + len(unit)*2 <= len(seq) and seq[end + len(unit) : end + len(unit)*2] == unit and seq[end + len(unit)*2 : end + len(unit)*3] != unit:
-                    # Bridge one unit after stretch.
-                    matches.append([end + len(unit), len(unit)])
-
-        for match_start, match_len in matches:
             # Ignore repeats that completely overlap a repeat of a longer unit.
             # Using those is not expected to give a high score, but their
             # presence may greatly increase calculation time.
-            match_end = match_start + match_len
             if not any(len(unit) < len(o_unit) and match_start >= o_start and match_end <= o_end
                     for o_start, o_end, o_unit in repeats):
                 repeats.append([match_start, match_end, unit])
@@ -660,7 +646,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
 
     # Find stretches of the preferred units first,
     # then find more units outside those stretches.
-    repeats = find_repeat_stretches(seq, preferred_units, True, True)
+    repeats = find_repeat_stretches(seq, preferred_units, True)
     for i, (start, end, preferred_unit) in enumerate(repeats):
         if start:
             # Find units before repeat i.
@@ -715,7 +701,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
     find_repeat_stretches(
         seq,
         [unit for unit in units if unit not in preferred_units],
-        False, False, repeats)
+        False, repeats)
 
     # Where repeat stretches overlap, also include trimmed copies that don't overlap.
     repeat_trims = tuple(({0}, {0}) for x in range(len(repeats)))
@@ -738,9 +724,9 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
     for i in range(len(repeat_trims)):
         start, end, unit = repeats[i]
         # Don't trim unpreferred units such that they violate min_repeat_length.
-        # For ref units, a lower threshold of 4 nt is applied.
+        # For ref units, a lower threshold of 3 nt is applied.
         # NOTE: hardcoded number.
-        min_length = 4 if unit in preferred_units else NAMING_OPTIONS["min_repeat_length"]
+        min_length = 3 if unit in preferred_units else NAMING_OPTIONS["min_repeat_length"]
         for trim_start in repeat_trims[i][0]:
             for trim_end in repeat_trims[i][1]:
                 trim_length = trim_start + trim_end
