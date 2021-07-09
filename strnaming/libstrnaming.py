@@ -569,15 +569,17 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_g
 
         if score >= best_score:
             if score == best_score:
-                # Only update path if it is more 5'.
-                better_path = False
-                for a, b in zip(best_path, path):
-                    if a[0] == b[0]:
-                        continue
-                    better_path = a[0] > b[0]
-                    break
+                # Tiebreak #1: prefer fewer stretches.
+                better_path = len(best_path) > len(path)
                 if not better_path:
-                    continue  # best_path is 5' of path.
+                    # Tiebreak #2: Prefer most 5' starting position.
+                    for a, b in zip(best_path, path):
+                        if a[0] == b[0]:
+                            continue
+                        better_path = a[0] > b[0]
+                        break
+                if not better_path:
+                    continue
             best_score = score
             best_path = path
 

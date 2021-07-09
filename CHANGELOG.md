@@ -20,6 +20,8 @@ STRNaming Changelog
   repeat units now have a higher minimum of 8 nt (up from 5).
 * Mononucleotide stretches of 5nt are no longer considered a valid repeat when
   overlapped completely by a hexanucleotide repeat unit.
+* When multiple structures with differing numbers of repeat stretches result in
+  the same score, always select the one with the fewest repeat stretches.
 * Don't consider names that include an interruption of which the sequence is equal
   to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
 * New built-in reference sequence cache and reference structure plumbing.
