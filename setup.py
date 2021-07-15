@@ -58,8 +58,8 @@ setuptools.setup(
     python_requires='>=3.5',
     package_data={
         "strnaming": [
+            "data/reference-structures-*.bin.gz",
             "data/refseq-*-*.txt.gz",
-            "data/structures.txt",
             "data/ranges_*.txt"]
     },
     entry_points={

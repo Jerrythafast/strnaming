@@ -1,7 +1,7 @@
 STRNaming Changelog
 ===================
 
-### Version 1.1.0 (in progress)
+### Version 1.1.0 (15 July 2021)
 * Updated scoring criteria to minimize unintended side-effects of other changes.
 * Fixed HPRTB allele numbering: previously, the CE allele number calculated
   for a given sequence was one higher than it should be.
@@ -25,7 +25,8 @@ STRNaming Changelog
   the same score, always select the one with the fewest repeat stretches.
 * Don't consider names that include an interruption of which the sequence is equal
   to an adjacent repeat unit (e.g., CCTA[2]CCTA[1]TCTA[2]).
-* New built-in reference sequence cache and reference structure plumbing.
+* New built-in reference sequence cache and bundled reference structure data for
+  nearly the entire human genome.
 * New mandatory ACTION command-line argument to choose between allele naming
   and reference sequence downloading.
 * New options for generating HTML-formatted output with repeat unit coloring.
@@ -43,5 +44,5 @@ STRNaming Changelog
   provided reference sequence results in generating over 5 million scaffolds.
 
 
-### Version 1.0.0 (21 december 2020)
+### Version 1.0.0 (21 December 2020)
 Initial release.

@@ -215,20 +215,21 @@ class ReferenceStructureStore:
 
 
 class ReportedRangeStore:
-    def __init__(self, ranges_input=None, *, structure_store=None):
+    def __init__(self, ranges_input=None, *, structure_store=None, load_structures=False):
         """
         Construct a new ReportedRangeStore.
 
         If structure_store is provided, it is used as the backing store
         of reference STR structure and reference sequence data.
-        If ranges_input is provided, it is passed to load_from_tsv().
+        If ranges_input is provided, it is passed to load_from_tsv(),
+        together with the load_structures argument if given.
         """
         self.ranges = {}
         self.structure_store = structure_store if structure_store else ReferenceStructureStore()
         if ranges_input is not None:
-            self.load_from_tsv(ranges_input)
+            self.load_from_tsv(ranges_input, load_structues=load_structures)
 
-    def load_from_tsv(self, input):
+    def load_from_tsv(self, input, *, load_structures=False):
         """
         Load reported ranges from a tab-separated input stream.
 
@@ -237,6 +238,9 @@ class ReportedRangeStore:
 
         The end position is inclusive.  If sequences are expected in reverse
         complement orientation, the start and end positions should be swapped.
+
+        If load_structures=True, ReferenceStructureStore.load_within_range() is
+        called prior to configuring each ReportedRange.
         """
         headers = input.readline().rstrip("\r\n").split("\t")
         try:
@@ -255,7 +259,7 @@ class ReportedRangeStore:
                 start, end = end, start
                 options["reverse_complement"] = True
             self.add_range(values[ci["name"]], values[ci["chromosome"]], start,
-                end + 1, options=options)
+                end + 1, load_structures=load_structures, options=options)
 
     def add_complex_range(self, name, genome_position, *, options=None):
         """
@@ -490,6 +494,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
                     part["prefix"], suffix, part["units"], part["overlong_gap"])
             except libstrnaming.OutOfTimeException:
+                # TODO: Add range name to this message (and possibly others).
                 sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
                     % (normalized_seq[pos:end],))
                 path = []

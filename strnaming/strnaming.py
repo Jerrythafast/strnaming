@@ -61,9 +61,9 @@ def run_strnaming(arguments):
     """
     Run STRNaming command with the given arguments.
     """
-    structure_store = classes.ReferenceStructureStore(stream_package_data("structures.txt"))
     ranges_store = classes.ReportedRangeStore(
-        stream_package_data("ranges_%s.txt" % arguments.ranges), structure_store=structure_store)
+        stream_package_data("ranges_%s.txt" % arguments.ranges),
+        load_structures=True)
     if arguments.html:
         html.make_page(ranges_store, arguments.instream, arguments.outstream,
             page_headers=arguments.html_page_headers,

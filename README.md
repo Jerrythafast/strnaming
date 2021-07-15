@@ -79,7 +79,7 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
-### Version 1.1.0 (in progress)
+### Version 1.1.0 (15 July 2021)
 Naming of some loci has been updated as a result of bug fixes and improvements
 to the algorithm. Scoring criteria have been updated to minimize unintended
 side-effects of these changes.
@@ -108,6 +108,8 @@ New features:
   mandatory ACTION command-line argument.
 * Colored output in HTML format is now available by using the --html
   command-line argument.
+* Reference sequence analysis results of almost the entire human genome have
+  been embedded into the package.
 
-### Version 1.0.0 (21 december 2020)
+### Version 1.0.0 (21 December 2020)
 Initial release of STRNaming.
