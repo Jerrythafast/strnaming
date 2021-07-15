@@ -227,7 +227,7 @@ class ReportedRangeStore:
         self.ranges = {}
         self.structure_store = structure_store if structure_store else ReferenceStructureStore()
         if ranges_input is not None:
-            self.load_from_tsv(ranges_input, load_structues=load_structures)
+            self.load_from_tsv(ranges_input, load_structures=load_structures)
 
     def load_from_tsv(self, input, *, load_structures=False):
         """
