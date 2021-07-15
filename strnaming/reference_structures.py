@@ -119,7 +119,7 @@ def get_within_range(chromosome, start, end):
     reffile = BUILTINDIR / filename
     if not reffile.is_file():
         return structures
-    with gzip.open(str(reffile), "br") as f:
+    with gzip.open(str(reffile), "rb") as f:
         while True:
             # Read header.
             header = instream.read(6)

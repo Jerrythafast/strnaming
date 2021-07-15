@@ -23,11 +23,11 @@
 
 import setuptools
 
-with open("README.md", "tr") as fh:
+with open("README.md", "rt") as fh:
     long_description = fh.read()
 
 version = {}
-with open("strnaming/__init__.py", "tr") as fh:
+with open("strnaming/__init__.py", "rt") as fh:
     exec(fh.read(), version)
 
 setuptools.setup(

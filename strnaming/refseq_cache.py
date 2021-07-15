@@ -135,7 +135,7 @@ def _get_chunk(chromosome, chunk, skip, length):
     chunkfilename = CHUNKFILENAME.format(chromosome=chromosome, chunk=chunk)
     chunkfile = BUILTINDIR / chunkfilename
     try:
-        with gzip.open(str(chunkfile), "tr") as f:
+        with gzip.open(str(chunkfile), "rt") as f:
             f.seek(skip)
             return f.read(length)
     except FileNotFoundError:
@@ -143,7 +143,7 @@ def _get_chunk(chromosome, chunk, skip, length):
     chunkfile = CACHEDIR / chunkfilename
     chunkfilepath = str(chunkfile)
     try:
-        with gzip.open(chunkfilepath, "tr") as f:
+        with gzip.open(chunkfilepath, "rt") as f:
             f.seek(skip)
             return f.read(length)
     except FileNotFoundError:
@@ -155,7 +155,7 @@ def _get_chunk(chromosome, chunk, skip, length):
                 # Try reading the chunk file again, it could have been
                 # created while we were waiting to acquire the lock.
                 try:
-                    with gzip.open(chunkfilepath, "tr") as f:
+                    with gzip.open(chunkfilepath, "rt") as f:
                         f.seek(skip)
                         return f.read(length)
                 except FileNotFoundError:
@@ -163,7 +163,7 @@ def _get_chunk(chromosome, chunk, skip, length):
                 seq = _load_from_ensembl(chromosome, chunk_offset,
                     min(chunk_offset + CHUNK_SIZE - 1, CHR_RANGES[chromosome][1]))
                 tempfile = CACHEDIR / (chunkfilename + ".tmp")
-                with gzip.open(str(tempfile), "tw") as f:
+                with gzip.open(str(tempfile), "wt") as f:
                     f.write(seq)
                 try:
                     tempfile.replace(chunkfile)
