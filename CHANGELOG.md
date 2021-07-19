@@ -3,7 +3,8 @@ STRNaming Changelog
 
 ### Version 1.1.1 (19 July 2021)
 * Fixed an issue with CE allele numbering that occurred for reporting ranges
-  that halfway into a structure with a hardcoded reference length adjustment.
+  that started or ended halfway into a structure with a hardcoded reference
+  length adjustment.
 * Updated table of hardcoded reference length adjustments to include more loci.
 
 ### Version 1.1.0 (15 July 2021)
