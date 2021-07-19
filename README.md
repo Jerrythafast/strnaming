@@ -79,6 +79,11 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
+### Version 1.1.1 (19 July 2021)
+* Fixed an issue with CE allele numbering that occurred for reporting ranges
+  that halfway into a structure with a hardcoded reference length adjustment.
+* Updated table of hardcoded reference length adjustments to include more loci.
+
 ### Version 1.1.0 (15 July 2021)
 Naming of some loci has been updated as a result of bug fixes and improvements
 to the algorithm. Scoring criteria have been updated to minimize unintended

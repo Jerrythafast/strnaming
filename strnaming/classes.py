@@ -363,8 +363,25 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         self.reverse_complement = self.options.get("reverse_complement", False)
 
         # Analyse sequence to extract repeat units.
+        first_structure_start = None
         pos = start
         for structure in structure_store.get_structures(chromosome, start, end):
+
+            # Drop any repeat stretches that have more than an entire repeat
+            # outside either end of the reported range.
+            filtered_structure = list(filter(lambda stretch: (
+                    start <= min(stretch[0] + stretch[2], stretch[1] - 1) and
+                    end >= max(stretch[1] - stretch[2], stretch[0] + 1)),
+                structure))
+
+            # If we now end up with too short an STR structure, drop it.
+            if not filtered_structure or filtered_structure[-1][1] - filtered_structure[0][0] < libstrnaming.NAMING_OPTIONS["min_structure_length"]:
+                continue
+
+            # We need to remember where the first actually included structure began, as
+            # we don't want to apply the length_adjustments of those that we dropped.
+            if first_structure_start is None:
+                first_structure_start = structure[0][0]
 
             # Set length adjustment according to prefix/infix/preinsert.
             self.length_adjust += pos - structure[0][0]
@@ -378,16 +395,8 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                     key=lambda stretch: (stretch[1]-stretch[0], stretch[2]), reverse=True)]
             units = [unit for index, unit in enumerate(units) if units.index(unit) == index]
 
-            # Drop any repeat stretches that have more than an entire repeat
-            # outside either end of the reported range.
-            structure = list(filter(lambda stretch: (
-                    start <= min(stretch[0] + stretch[2], stretch[1] - 1) and
-                    end >= max(stretch[1] - stretch[2], stretch[0] + 1)),
-                structure))
-
-            # If we now end up with too short an STR structure, drop it.
-            if not structure or structure[-1][1] - structure[0][0] < libstrnaming.NAMING_OPTIONS["min_structure_length"]:
-                continue
+            # From here on, we are not interested in the removed stretches anymore.
+            structure = filtered_structure
 
             # Store preinsert/postinsert if the structure extends slightly outside range.
             if start > structure[0][0]:
@@ -431,7 +440,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 # Save suffix of last repeat structure in the library.
                 self.library[-1]["suffix"] = refseq_store.get_refseq(chromosome, pos, end)
             self.length_adjust += last_structure_end - end + length_adjustments.get_adjustment(
-                chromosome, start, end, len(self.library) > 1)
+                chromosome, first_structure_start, last_structure_end, len(self.library) > 1)
         else:
             self.refseq = refseq_store.get_refseq(chromosome, start, end)
             self.length_adjust = None
