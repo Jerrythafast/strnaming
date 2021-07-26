@@ -176,7 +176,7 @@ def _get_chunk(chromosome, chunk, skip, length):
             raise ValueError(
                 "Sequence for chr{chromosome}:{start}..{end} is unavailable and could not be "
                 "downloaded automatically. Please run 'strnaming "
-                "download-refseq chr{chromosome}:{start}..{end}' on a system with internet "
+                "refseq-cache chr{chromosome}:{start}..{end}' on a system with internet "
                 "access and manually transfer the downloaded files to '{cachedir}'.".format(
                 chromosome=chromosome, start=start, end=start + length - 1, cachedir=CACHEDIR))
 
