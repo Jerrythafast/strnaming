@@ -22,7 +22,8 @@
 from . import classes
 
 
-HTML_START = """<html>
+HTML_START = """<!DOCTYPE html>
+<html>
 <head>
 <title>STRNaming Results</title>
 <style type="text/css">

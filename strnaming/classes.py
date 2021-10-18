@@ -340,7 +340,7 @@ class ComplexReportedRange:
         variants = libsequence.call_variants(self.refseq, seq, location=self.location)
         return " ".join(variants) or "REF"
 
-    def from_name(self, seq):
+    def from_name(self, name):
         """Convert allele name to a raw sequence."""
         if name == "REF":
             return self.refseq

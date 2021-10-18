@@ -79,6 +79,11 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
+### Version 1.1.2 (TBD)
+* Updated hardcoded reference length adjustment table to suppress second
+  structure 5' of DYS522.
+* Added reference structure for SE33.
+
 ### Version 1.1.1 (19 July 2021)
 * Fixed an issue with CE allele numbering that occurred for reporting ranges
   that started or ended halfway into a structure with a hardcoded reference
