@@ -37,9 +37,12 @@ h1 {
     font-family: sans-serif;
     margin: 0;
 }
+tr {
+    background-color: rgba(0, 91, 142, 0.2);
+}
 tr:hover {
     font-weight: bold;
-    background-color: rgba(0, 91, 142, 0.4);
+    background-color: rgba(0, 91, 142, 0.5);
     transition: background-color 0.2s ease;
 }
 .seqrepeat0 {
@@ -57,9 +60,20 @@ tr:hover {
 .seqrepeat4 {
     background-color: rgba(144, 80, 144, 0.75);
 }
+.alignright td, .alignright th {
+    text-align: right;
+}
+.notice {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    background-color: white;
+    font-family: sans-serif;
+}
 </style>
 </head>
-<body>\n"""
+<body ondblclick="this.classList.toggle('alignright')">
+<div class="notice">Double-click to toggle text alignment.</div>\n"""
 MARKER_START = "<h1>%s</h1>"
 TABLE_START = "<table><tr><th>Marker</th><th>Allele Name</th><th>Sequence</th></tr>\n"
 SPAN_TEMPLATE = "<span class='seqrepeat%i'>%%s</span>"
