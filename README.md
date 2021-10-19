@@ -80,6 +80,7 @@ These are the files to be copied to the offline system for STRNaming to work.
 Release Notes
 -------------
 ### Version 1.1.2 (TBD)
+* Updated CE allele numbering of DYS612 (+6 units).
 * Updated hardcoded reference length adjustment table to suppress second
   structure 5' of DYS522.
 * Added reference structure for SE33.
