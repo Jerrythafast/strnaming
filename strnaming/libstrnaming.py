@@ -32,7 +32,8 @@ import json #FIXME, temp
 TRIM_FOR_SINGLETONS = True  # STRNaming was trained with 'True', but JS version always had 'False'. Not sure what's better.
 
 # Maximum number of seconds that get_best_path() may spend.
-MAX_SECONDS = 300
+MAX_SECONDS = 30
+MAX_SECONDS_REFSEQ = 300
 
 # Number of times a repeat must be repeated to make a 'significant' repeat stretch.
 MANY_TIMES = 4
@@ -410,10 +411,10 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
 #get_ranges
 
 
-def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
+def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                      anchored=set(), orphans=set(), prev_gap_len=-1, prev_unit=""):
     # Timekeeping.
-    if time.monotonic() - starttime > MAX_SECONDS:
+    if time.monotonic() > endtime:
         raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
@@ -457,16 +458,16 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime,
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if not now_orphaned - anchorable_after_gap:
                     for substructure, longest_stretch1 in recurse_gen_path(next_pos, end_pos,
-                            scaffolds, remaining_ranges, starttime,
+                            scaffolds, remaining_ranges, endtime,
                             now_anchored, now_orphaned, gap_len, last_unit):
                         if not gapseq == substructure[0][2]:
                             yield (scaffold + substructure, max(longest_stretch1, longest_stretch2))
 #recurse_gen_path
 
 
-def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime):
+def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
     # Most validity rules are efficiently implemented in recurse_gen_path.
-    for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, starttime):
+    for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime):
         path, (longest_stretch, block_length) = result
 
         # The path is invalid if it has only singletons of a non-preferred unit.
@@ -485,7 +486,7 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime)
 #gen_valid_paths
 
 
-def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
+def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
     scaffolds = get_scaffolds(repeats)
     short_gaps, all_gaps = get_gaps(repeats, scaffolds, seq)
     ranges = get_ranges(scaffolds, short_gaps, all_gaps, is_refseq)
@@ -513,7 +514,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
 
         # First, try to reach exactly from prefix to suffix.
         if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix]:
-            for result in gen_valid_paths(len_prefix, pos_suffix, scaffolds, ranges, is_refseq, starttime):
+            for result in gen_valid_paths(len_prefix, pos_suffix, scaffolds, ranges, is_refseq, endtime):
                 success = True
                 yield result
             if success:
@@ -525,7 +526,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
         # or finishing at the start of suffix separately.
         if has_prefix:
             for end_pos in end_positions & ranges[0][len_prefix].keys():
-                for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq, starttime):
+                for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq, endtime):
                     success = True
                     yield result
             if not success:
@@ -534,7 +535,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
         if has_suffix:
             for start_pos in start_positions:
                 if pos_suffix in ranges[0][start_pos]:
-                    for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq, starttime):
+                    for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq, endtime):
                         success = True
                         yield result
             if not success:
@@ -546,22 +547,21 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
     for start_pos in start_positions:
         for end_pos in end_positions & ranges[0][start_pos].keys():
             if not is_refseq or end_pos - start_pos >= NAMING_OPTIONS["min_structure_length"]:
-                yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, starttime)
+                yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
 #gen_all_paths
 
 
 def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_gap=-1):
     """Return combination of repeats that maximises calc_path_score."""
-    starttime = time.monotonic()
-
     len_prefix = len(prefix) if prefix is not None else -1
     len_suffix = len(suffix) if suffix is not None else -1
     len_seq = len(seq)
     is_refseq = ref_len_large_gap == -1
     best_score = -sys.maxsize
     best_path = []
+    endtime = time.monotonic() + (MAX_SECONDS_REFSEQ if is_refseq else MAX_SECONDS)
 
-    for path, (_, block_length) in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, starttime):
+    for path, (_, block_length) in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 
         # Calculate the score of the current path.
         score = calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path,
