@@ -33,7 +33,7 @@ PAT_VARIANT_STR = re.compile(
     "(?!(?P=old))(?P<new>[ACGT]+|-)$")
 PAT_VARIANT_SNP = re.compile(
     "^(?P<pos>\d+)(?:\.(?P<ins>1))?"
-    "(?P<old>(?:(?<=\.1)-)|(?<!\.1)[ACGT]+)>"
+    "(?P<old>(?:(?<=\.1)-)|(?<!\.1)[ACGTN]+)>"
     "(?!(?P=old))(?P<new>[ACGT]+|-)$")
 PAT_VARIANT_MT = re.compile(
     "^(?P<old>(?P<a>[ACGT])|-?)"
