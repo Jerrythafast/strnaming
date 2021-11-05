@@ -546,18 +546,18 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 
     else:
         # Refseq structures must include a significant repeat.
-        significant_repeat_spans = [r[:2] for r in repeats if r[3][0] >= r[3][1] * MANY_TIMES]
-        i = 0
+        significant_repeats = (r for r in repeats if r[3][0] >= r[3][1] * MANY_TIMES)
+        significant_repeat = next(significant_repeats, None)
         for start_pos in tuple(sorted(start_positions)):
-            while i < len(significant_repeat_spans) and significant_repeat_spans[i][0] < start_pos:
-                i += 1
-            if i == len(significant_repeat_spans):
+            while significant_repeat is not None and significant_repeat[0] < start_pos:
+                significant_repeat = next(significant_repeats, None)
+            if significant_repeat is None:
                 # Start position comes after start of last significant repeat.
                 start_positions.remove(start_pos)
             else:
                 minimal_end_pos = max(
                     start_pos + NAMING_OPTIONS["min_structure_length"],
-                    significant_repeat_spans[i][1])
+                    significant_repeat[1])
                 for end_pos in list(ranges[0][start_pos].keys()):
                     if end_pos < minimal_end_pos:
                         # End position comes before end of first significant repeat.
