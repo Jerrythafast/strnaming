@@ -544,10 +544,28 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         if success:
             return  # Yielded path with anchored prefix OR suffix.
 
+    else:
+        # Refseq structures must include a significant repeat.
+        significant_repeat_spans = [r[:2] for r in repeats if r[3][0] >= r[3][1] * MANY_TIMES]
+        i = 0
+        for start_pos in tuple(sorted(start_positions)):
+            while i < len(significant_repeat_spans) and significant_repeat_spans[i][0] < start_pos:
+                i += 1
+            if i == len(significant_repeat_spans):
+                # Start position comes after start of last significant repeat.
+                start_positions.remove(start_pos)
+            else:
+                minimal_end_pos = max(
+                    start_pos + NAMING_OPTIONS["min_structure_length"],
+                    significant_repeat_spans[i][1])
+                for end_pos in list(ranges[0][start_pos].keys()):
+                    if end_pos < minimal_end_pos:
+                        # End position comes before end of first significant repeat.
+                        del ranges[0][start_pos][end_pos]
+
     for start_pos in start_positions:
         for end_pos in end_positions & ranges[0][start_pos].keys():
-            if not is_refseq or end_pos - start_pos >= NAMING_OPTIONS["min_structure_length"]:
-                yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
+            yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
 #gen_all_paths
 
 
@@ -857,7 +875,7 @@ def collapse_repeat_units_refseq(seq, *, allow_close=0):
         if path and len(seq) - path[-1][1] < 30 and not allow_close & 2:
             sys.stderr.write("Path #%i ends at %i positions before end of sequence\n" % (len(previous_paths) + 1, len(seq) - path[-1][1]))
 
-        if previous_path != path:
+        if path and previous_path != path:
             # FIXME, temp:
             this_path = json.dumps(path)
             if this_path in previous_paths:
