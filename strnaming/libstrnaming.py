@@ -541,31 +541,28 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
             if not success:
                 # Turns out we can't end at pos_suffix.
                 end_positions.remove(pos_suffix)
-        if success:
-            return  # Yielded path with anchored prefix OR suffix.
+        if not success:
+            # No path with anchored prefix OR suffix found; try everything else.
+            for start_pos in start_positions:
+                for end_pos in end_positions & ranges[0][start_pos].keys():
+                    yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
 
     else:
         # Refseq structures must include a significant repeat.
         significant_repeats = (r for r in repeats if r[3][0] >= r[3][1] * MANY_TIMES)
         significant_repeat = next(significant_repeats, None)
-        for start_pos in tuple(sorted(start_positions)):
+        for start_pos in sorted(start_positions):
             while significant_repeat is not None and significant_repeat[0] < start_pos:
                 significant_repeat = next(significant_repeats, None)
             if significant_repeat is None:
                 # Start position comes after start of last significant repeat.
-                start_positions.remove(start_pos)
-            else:
-                minimal_end_pos = max(
-                    start_pos + NAMING_OPTIONS["min_structure_length"],
-                    significant_repeat[1])
-                for end_pos in list(ranges[0][start_pos].keys()):
-                    if end_pos < minimal_end_pos:
-                        # End position comes before end of first significant repeat.
-                        del ranges[0][start_pos][end_pos]
-
-    for start_pos in start_positions:
-        for end_pos in end_positions & ranges[0][start_pos].keys():
-            yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
+                return
+            minimal_end_pos = max(
+                start_pos + NAMING_OPTIONS["min_structure_length"],
+                significant_repeat[1])
+            for end_pos in end_positions & ranges[0][start_pos].keys():
+                if end_pos >= minimal_end_pos:
+                    yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, True, endtime)
 #gen_all_paths
 
 
