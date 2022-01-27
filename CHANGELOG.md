@@ -8,6 +8,7 @@ STRNaming Changelog
   structure 5' of DYS522.
 * Added double-click-to-toggle-text-alignment feature to HTML output.
 * Improved reference sequence analysis speed.
+* Fixed mtDNA reference sequence download URL.
 
 ### Version 1.1.1 (19 July 2021)
 * Fixed an issue with CE allele numbering that occurred for reporting ranges
