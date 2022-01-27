@@ -115,8 +115,9 @@ def _load_from_ensembl(chromosome, start, end):
     for attempt in range(DOWNLOAD_ATTEMPTS):
         try:
             time.sleep(0.5)
-            return urllib.request.urlopen(ENSEMBL_URL.format(
-                chromosome=chromosome, start=start, end=end)).read().decode("UTF-8")
+            return urllib.request.urlopen(
+                ENSEMBL_URL.format(chromosome="MT" if chromosome == "M" else chromosome,
+                    start=start, end=end)).read().decode("UTF-8")
         except urllib.error.HTTPError as e:
             if e.code == 429 and "Retry-After" in e.headers:
                 # We are being rate limited by the server.
