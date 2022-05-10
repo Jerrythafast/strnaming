@@ -79,7 +79,7 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
-### Version 1.1.2 (TBD)
+### Version 1.1.2 (10 May 2022)
 * Updated CE allele numbering of DYS612 (+6 units).
 * Added reference structure for SE33.
 * Updated hardcoded reference length adjustment table to suppress second
