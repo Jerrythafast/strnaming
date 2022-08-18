@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2022 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -24,7 +24,7 @@ An algorithm for generating simple, informative names for sequenced STR
 alleles in a standardised and automated manner.
 """
 
-__version_info__ = ('1', '1', '2')
+__version_info__ = ('1', '1', '3')
 __version__ = '.'.join(__version_info__)
 usage = __doc__.split("\n\n\n")
 

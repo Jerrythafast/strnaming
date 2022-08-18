@@ -1,6 +1,10 @@
 STRNaming Changelog
 ===================
 
+### Version 1.1.3 (18 August 2022)
+* Fixed an issue that caused STRNaming to sometimes favour a longer name with
+  the same score.
+
 ### Version 1.1.2 (10 May 2022)
 * Updated CE allele numbering of DYS612 (+6 units).
 * Added reference structure for SE33.

@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2022 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -585,8 +585,9 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_g
         if score >= best_score:
             if score == best_score:
                 # Tiebreak #1: prefer fewer stretches.
-                better_path = len(best_path) > len(path)
-                if not better_path:
+                len_diff = len(best_path) - len(path)
+                better_path = len_diff > 0
+                if not better_path and not len_diff:
                     # Tiebreak #2: Prefer most 5' starting position.
                     for a, b in zip(best_path, path):
                         if a[0] == b[0]:
