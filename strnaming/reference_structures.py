@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2023 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -102,57 +102,109 @@ def _txt2bin(instream):
         outfile.close()
 
 
-def _parse_header(header):
-    start = ((header[3] & 0x0F) << 24) | (header[2] << 16) | (header[1] << 8) | (header[0])
-    length = ((header[3] & 0xF0) << 4) | header[4]
-    num_bytes = header[5]
-    return (start, start + length, num_bytes)
+class Reader:
+    def __init__(self, chromosome):
+        self.filename = REFFILENAME.format(chromosome=chromosome)
+        self.reffile = BUILTINDIR / self.filename
+
+    def __enter__(self):
+        self.s_start = self.s_end = self.num_bytes = None
+        if self.reffile.is_file():
+            self.instream = gzip.open(str(self.reffile), "rb")
+            self.next_header()
+        else:
+            self.instream = None
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.instream is not None:
+            self.instream.close()
+            self.s_start = self.s_end = self.num_bytes = None
+
+    def next_header(self):
+        if self.num_bytes:
+            # Seek to next header.
+            self.instream.seek(self.num_bytes, whence=1)
+        header = self.instream.read(6)
+        if header:
+            self.s_start = (((header[3] & 0x0F) << 24) |
+                (header[2] << 16) | (header[1] << 8) | header[0])
+            self.s_end = self.s_start + (((header[3] & 0xF0) << 4) | header[4])
+            self.num_bytes = header[5]
+            return True
+        else:  # EOF
+            self.s_start = self.s_end = self.num_bytes = None
+            return False
+
+    def next_structure(self):
+        this_bytes = self.instream.read(self.num_bytes)
+        self.num_bytes = 0  # Have read them now.
+        structure = []
+        pos = self.s_start
+        i = 0
+        while i < len(this_bytes):
+            byte = this_bytes[i]
+            unit_len = byte >> 5
+            if unit_len == 7:
+                i += 1
+                unit_len = (byte & 0x1C) >> 2
+                repeats = ((byte & 0x03) << 8 | this_bytes[i]) + 1
+            else:
+                repeats = (byte & 0x1F) + 1
+            if unit_len:
+                stretch_end = pos + repeats * unit_len
+                structure.append([pos, stretch_end, unit_len])
+                pos = stretch_end
+            else:
+                pos += repeats  # Skip over interruption.
+            i += 1
+        if pos != self.s_end:
+            raise ValueError("Possible corruption in file %s" % self.reffile)
+        self.next_header()
+        return structure
+
+    def skip_to(self, start):
+        if self.s_end is not None:
+            while self.s_end <= start and self.next_header():
+                pass
+
+    def gen_until(self, end):
+        while self.s_start is not None and self.s_start <= end:
+            yield self.next_structure()
+
+
+def gen_within_range(chromosome, start, end):
+    """
+    Generate all structures in the given range of the genome. The end position is inclusive.
+    """
+    with Reader(chromosome) as reader:
+        reader.skip_to(start)
+        yield from reader.gen_until(end)
 
 
 def get_within_range(chromosome, start, end):
     """
     Get all structures in the given range of the genome. The end position is inclusive.
     """
-    end += 1
-    structures = []
-    filename = REFFILENAME.format(chromosome=chromosome)
-    reffile = BUILTINDIR / filename
-    if not reffile.is_file():
-        return structures
-    with gzip.open(str(reffile), "rb") as instream:
-        while True:
-            # Read header.
-            header = instream.read(6)
-            if not header:
-                break  # EOF
-            s_start, s_end, num_bytes = _parse_header(header)
-            if s_start >= end:
-                break  # Done (assuming input is sorted by s_start).
-            if s_end <= start:
-                instream.seek(num_bytes, whence=1)
-            else:
-                # Structure within range.
-                this_bytes = instream.read(num_bytes)
-                structure = []
-                pos = s_start
-                i = 0
-                while i < num_bytes:
-                    byte = this_bytes[i]
-                    unit_len = byte >> 5
-                    if unit_len == 7:
-                        i += 1
-                        unit_len = (byte & 0x1C) >> 2
-                        repeats = ((byte & 0x03) << 8 | this_bytes[i]) + 1
-                    else:
-                        repeats = (byte & 0x1F) + 1
-                    if unit_len:
-                        stretch_end = pos + repeats * unit_len
-                        structure.append([pos, stretch_end, unit_len])
-                        pos = stretch_end
-                    else:
-                        pos += repeats  # Skip over interruption.
-                    i += 1
-                if pos != s_end:
-                    raise ValueError("Possible corruption in file %s" % reffile)
-                structures.append(structure)
-    return structures
+    return list(gen_within_range(chromosome, start, end))
+
+
+def gen_within_any_range(chromosome, ranges):
+    """
+    Generate all structures in the given ranges of a chromosome.
+    The ranges should be a sorted iterable of (start, end) pairs.
+    The end positions are inclusive.
+    """
+    with Reader(chromosome) as reader:
+        for start, end in ranges:
+            reader.skip_to(start)
+            yield from reader.gen_until(end)
+
+
+def get_within_any_range(chromosome, ranges):
+    """
+    Get all structures in the given ranges of a chromosome.
+    The ranges should be a sorted iterable of (start, end) pairs.
+    The end positions are inclusive.
+    """
+    return list(get_within_any_range(chromosome, ranges))

@@ -1,6 +1,10 @@
 STRNaming Changelog
 ===================
 
+### Version 1.1.4 (TBD)
+* Added capability to load reference structures from many locations on one
+  chromosome in a single pass.
+
 ### Version 1.1.3 (18 August 2022)
 * Fixed an issue that caused STRNaming to sometimes favour a longer name with
   the same score.
