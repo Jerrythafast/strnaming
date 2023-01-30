@@ -487,6 +487,23 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
 
 
 def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+    if not is_refseq:
+        # Filter out repeat stretches that fall completely in the prefix or suffix.
+        if seq.startswith(prefix):
+            len_prefix = len(prefix)
+        else:
+            zero, len_prefix, score = align(seq, prefix, prefix=True)
+            len_prefix = len_prefix if score > 0 else None
+        if len_prefix:
+            repeats = [repeat for repeat in repeats if repeat[1] > len_prefix]
+        if seq.endswith(suffix):
+            pos_suffix = len(seq) - len(suffix)
+        else:
+            zero, len_suffix, score = align(seq[-1::-1], suffix[-1::-1], prefix=True)
+            pos_suffix = len(seq) - len_suffix if score > 0 else None
+        if pos_suffix:
+            repeats = [repeat for repeat in repeats if repeat[0] < pos_suffix]
+
     scaffolds = get_scaffolds(repeats)
     short_gaps, all_gaps = get_gaps(repeats, scaffolds, seq)
     ranges = get_ranges(scaffolds, short_gaps, all_gaps, is_refseq)
@@ -498,19 +515,8 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
     if not is_refseq:
         # Try anchoring the prefix and suffix.
         success = False
-        if seq.startswith(prefix):
-            len_prefix = len(prefix)
-            has_prefix = len_prefix in start_positions
-        else:
-            zero, len_prefix, score = align(seq, prefix, prefix=True)
-            has_prefix = score > 0 and len_prefix in start_positions
-        if seq.endswith(suffix):
-            pos_suffix = len(seq) - len(suffix)
-            has_suffix = pos_suffix in end_positions
-        else:
-            zero, len_suffix, score = align(seq[-1::-1], suffix[-1::-1], prefix=True)
-            pos_suffix = len(seq) - len_suffix
-            has_suffix = score > 0 and pos_suffix in end_positions
+        has_prefix = len_prefix in start_positions
+        has_suffix = pos_suffix in end_positions
 
         # First, try to reach exactly from prefix to suffix.
         if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix]:
