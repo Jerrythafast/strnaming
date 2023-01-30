@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2023 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -398,6 +398,20 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             # From here on, we are not interested in the removed stretches anymore.
             structure = filtered_structure
 
+            # Construct a regex pattern.
+            regex_blocks = []
+            regex_pos = start
+            for stretch_start, stretch_end, unit_length in structure:
+                if stretch_start > regex_pos:
+                    regex_blocks.append(
+                        "%s" % refseq_store.get_refseq(chromosome, regex_pos, stretch_start))
+                regex_blocks.append("((%s)+)" % refseq_store.get_refseq(
+                    chromosome, stretch_start, stretch_start + unit_length))
+                regex_pos = stretch_end
+            if regex_pos < end:
+                regex_blocks.append("%s" % refseq_store.get_refseq(chromosome, regex_pos, end))
+            regex = re.compile("^" + "".join(regex_blocks) + "$")
+
             # Store preinsert/postinsert if the structure extends slightly outside range.
             if start > structure[0][0]:
                 self.preinsert = refseq_store.get_refseq(chromosome, structure[0][0], start)
@@ -432,7 +446,10 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                     chromosome, overlong_gap[0], overlong_gap[1]) if overlong_gap else "",
 
                 # The repeat units in the reference STR structure.
-                "units": units
+                "units": units,
+
+                # A compiled regular expression that matches the reference structure.
+                "regex": regex
             })
 
         if self.library:
@@ -499,14 +516,19 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 pos -= skip
             else:
                 end = len(normalized_seq)
-            try:
-                path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
-                    part["prefix"], suffix, part["units"], part["overlong_gap"])
-            except libstrnaming.OutOfTimeException:
-                # TODO: Add range name to this message (and possibly others).
-                sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
-                    % (normalized_seq[pos:end],))
-                path = []
+            match = part["regex"].match(normalized_seq[pos:end])
+            if match:
+                path = [match.span(group) + (match.group(group + 1),)
+                        for group in range(1, part["regex"].groups, 2)]
+            else:
+                try:
+                    path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
+                        part["prefix"], suffix, part["units"], part["overlong_gap"])
+                except libstrnaming.OutOfTimeException:
+                    # TODO: Add range name to this message (and possibly others).
+                    sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
+                        % (normalized_seq[pos:end],))
+                    path = []
             stretches += [[s_start + pos, s_end + pos, unit, i] for s_start, s_end, unit in path]
             pos = stretches[-1][1] if path else end
             if pos >= len(normalized_seq):
