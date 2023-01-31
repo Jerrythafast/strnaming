@@ -400,7 +400,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
             # Construct a regex pattern.
             regex_blocks = []
-            regex_pos = start
+            regex_pos = pos
             for stretch_start, stretch_end, unit_length in structure:
                 if stretch_start > regex_pos:
                     regex_blocks.append(
