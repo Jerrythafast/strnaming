@@ -142,7 +142,7 @@ class ReferenceStructureStore:
         The ranges should be a sorted iterable of (start, end) pairs.
         The end positions are exclusive.
         """
-        for structure in reference_structures.gen_within_any_range(
+        for structure in reference_structures.gen_within_ranges(
                 chromosome, ((start, end - 1) for start, end in ranges)):
             self.add_structure(chromosome, structure)
 

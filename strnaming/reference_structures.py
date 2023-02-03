@@ -182,14 +182,7 @@ def gen_within_range(chromosome, start, end):
         yield from reader.gen_until(end)
 
 
-def get_within_range(chromosome, start, end):
-    """
-    Get all structures in the given range of the genome. The end position is inclusive.
-    """
-    return list(gen_within_range(chromosome, start, end))
-
-
-def gen_within_any_range(chromosome, ranges):
+def gen_within_ranges(chromosome, ranges):
     """
     Generate all structures in the given ranges of a chromosome.
     The ranges should be a sorted iterable of (start, end) pairs.
@@ -199,12 +192,3 @@ def gen_within_any_range(chromosome, ranges):
         for start, end in ranges:
             reader.skip_to(start)
             yield from reader.gen_until(end)
-
-
-def get_within_any_range(chromosome, ranges):
-    """
-    Get all structures in the given ranges of a chromosome.
-    The ranges should be a sorted iterable of (start, end) pairs.
-    The end positions are inclusive.
-    """
-    return list(get_within_any_range(chromosome, ranges))
