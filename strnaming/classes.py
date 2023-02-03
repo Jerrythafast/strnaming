@@ -132,7 +132,18 @@ class ReferenceStructureStore:
 
         The end position is exclusive.
         """
-        for structure in reference_structures.get_within_range(chromosome, start, end - 1):
+        for structure in reference_structures.gen_within_range(chromosome, start, end - 1):
+            self.add_structure(chromosome, structure)
+
+    def load_within_ranges(self, chromosome, ranges):
+        """
+        Load human genome reference STR structure data.
+
+        The ranges should be a sorted iterable of (start, end) pairs.
+        The end positions are exclusive.
+        """
+        for structure in reference_structures.gen_within_ranges(
+                chromosome, ((start, end - 1) for start, end in ranges)):
             self.add_structure(chromosome, structure)
 
     def load_from_tsv(self, input):
