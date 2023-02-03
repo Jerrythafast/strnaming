@@ -2,6 +2,8 @@ STRNaming Changelog
 ===================
 ### Version 1.1.4 (TBD)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
+* ReportedRange.get_stretches() now attempts a quick regex match against the
+  reference structure prior to calling collapse_repeat_units().
 
 ### Version 1.1.3 (18 August 2022)
 * Fixed an issue that caused STRNaming to sometimes favour a longer name with
