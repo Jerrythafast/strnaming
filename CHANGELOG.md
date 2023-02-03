@@ -1,7 +1,7 @@
 STRNaming Changelog
 ===================
-
 ### Version 1.1.4 (TBD)
+* Ignore repeat stretches that fall completely in the prefix or suffix.
 * ReportedRange.get_stretches() now attempts a quick regex match against the
   reference structure prior to calling collapse_repeat_units().
 
@@ -65,7 +65,6 @@ STRNaming Changelog
   standard error stream and reporting no repeat stretches).
 * Reference sequence analysis will now raise a ComplexityException if the
   provided reference sequence results in generating over 5 million scaffolds.
-
 
 ### Version 1.0.0 (21 December 2020)
 Initial release.

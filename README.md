@@ -80,6 +80,7 @@ These are the files to be copied to the offline system for STRNaming to work.
 Release Notes
 -------------
 ### Version 1.1.4 (TBD)
+* Repeat stretches that fall completely in the prefix or suffix are now ignored.
 * Sequences that follow the same repeat pattern as the reference sequence are
   now named much more quickly while consistently using the same structure.
 
