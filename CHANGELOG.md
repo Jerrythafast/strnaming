@@ -1,5 +1,7 @@
 STRNaming Changelog
 ===================
+### Version 1.1.4 (TBD)
+* Ignore repeat stretches that fall completely in the prefix or suffix.
 
 ### Version 1.1.3 (18 August 2022)
 * Fixed an issue that caused STRNaming to sometimes favour a longer name with
@@ -61,7 +63,6 @@ STRNaming Changelog
   standard error stream and reporting no repeat stretches).
 * Reference sequence analysis will now raise a ComplexityException if the
   provided reference sequence results in generating over 5 million scaffolds.
-
 
 ### Version 1.0.0 (21 December 2020)
 Initial release.
