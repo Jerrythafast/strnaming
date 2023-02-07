@@ -1,6 +1,6 @@
 STRNaming Changelog
 ===================
-### Version 1.1.4 (TBD)
+### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
 * ReportedRange.get_stretches() now attempts a quick regex match against the
   reference structure prior to calling collapse_repeat_units().
