@@ -366,15 +366,35 @@ def get_gaps(repeats, scaffolds, seq):
 #get_gaps
 
 
-def extend_ranges_with_gaps(ranges, gap_ranges):
-    extended = {start: ends.copy() for start, ends in ranges.items()}
-    for start, ends in ranges.items():
+def extend_with_gaps(extended, gap_ranges, ranges_before, ranges_after):
+    for start, ends in ranges_before.items():
         subtree = extended[start]
-        for gap_start, anchorables in ends.items():
+        for gap_start, (anchorables, orphans) in ends.items():
             if gap_start in gap_ranges:
                 for gap_end in gap_ranges[gap_start]:
-                    for final_end, more_anchorables in ranges[gap_end].items():
-                        subtree[final_end] = subtree.get(final_end, set()) | anchorables | more_anchorables
+                    for final_end, (more_anchorables, more_orphans) in ranges_after[gap_end].items():
+                        if final_end in subtree:
+                            existing_anchorables, existing_orphans = subtree[final_end]
+                            new_anchorables = existing_anchorables | anchorables | more_anchorables
+                            new_orphans = ((orphans | more_orphans) & existing_orphans) - new_anchorables
+                            subtree[final_end] = (new_anchorables, new_orphans)
+                        else:
+                            new_anchorables = anchorables | more_anchorables
+                            new_orphans = (orphans | more_orphans) - new_anchorables
+                            subtree[final_end] = (new_anchorables, new_orphans)
+#extend_with_gaps
+
+
+def extend_ranges_with_gaps(gap_ranges, *prior_ranges):
+    # The prior_ranges should be sorted by the number of gaps allowed, ascending.
+    extended = {start: ends.copy() for start, ends in prior_ranges[-1].items()}
+    for ranges_before, ranges_after in zip(prior_ranges, prior_ranges[::-1]):
+        # [0] -> [(0,0)]    adding first gap: allow no gaps on either side
+        # [0,1] -> [(0,1),(1,0)]    adding second gap: allow 1 gap on 1 side only
+        # [0,1,2] -> [(0,2),(1,1),(2,0)]    adding third gap: allow 2 gaps on one side only, or 1 gap on both sides
+        # [0,1,2,3] -> [(0,3),(1,2),(2,1),(3,0)]    adding fourth gap: allow 3 gaps on one side only, or 2 gaps on one side with 1 on the other
+        # [0,1,2,3,4] -> [(0,4),(1,3),(2,2),(3,1),(4,0)]    adding fifth gap: allow 4 gaps on one side only, 3 gaps on one side with 1 on the other, or 2 gaps on both sides
+        extend_with_gaps(extended, gap_ranges, ranges_before, ranges_after)
     return extended
 #extend_ranges_with_gaps
 
@@ -386,35 +406,37 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
     # Lookup tables for starting positions and associated ending positions.
     # The positions are linked with the units that are anchorable along the way.
     start_end00 = {start:
-            {end: reduce(set.union, (scaffold[1] for scaffold in scaffolds_here))
+            {end: (
+                reduce(frozenset.union, (scaffold[1] for scaffold in scaffolds_here)),
+                reduce(frozenset.intersection, (scaffold[2] for scaffold in scaffolds_here)))
             for end, scaffolds_here in ends.items()}
         for start, ends in scaffolds.items()}
-    start_end10 = extend_ranges_with_gaps(start_end00, short_gaps)
-    start_end20 = extend_ranges_with_gaps(start_end10, short_gaps)
-    start_end30 = extend_ranges_with_gaps(start_end20, short_gaps)
-    start_end40 = extend_ranges_with_gaps(start_end30, short_gaps)
+    start_end10 = extend_ranges_with_gaps(short_gaps, start_end00)
+    start_end20 = extend_ranges_with_gaps(short_gaps, start_end00, start_end10)
+    start_end30 = extend_ranges_with_gaps(short_gaps, start_end00, start_end10, start_end20)
+    start_end40 = extend_ranges_with_gaps(short_gaps, start_end00, start_end10, start_end20, start_end30)
     if is_refseq:
-        start_end50 = extend_ranges_with_gaps(start_end40, short_gaps)
+        start_end50 = extend_ranges_with_gaps(short_gaps, start_end00, start_end10, start_end20, start_end30, start_end40)
     else:
-        start_end11 = extend_ranges_with_gaps(start_end00, all_gaps)
-        start_end21 = extend_ranges_with_gaps(start_end11, short_gaps)
-        start_end31 = extend_ranges_with_gaps(start_end21, short_gaps)
-        start_end41 = extend_ranges_with_gaps(start_end31, short_gaps)
-        start_end51 = extend_ranges_with_gaps(start_end41, short_gaps)
+        start_end11 = extend_ranges_with_gaps(all_gaps, start_end00)
+        start_end21 = extend_ranges_with_gaps(all_gaps, start_end00, start_end10)
+        start_end31 = extend_ranges_with_gaps(all_gaps, start_end00, start_end10, start_end20)
+        start_end41 = extend_ranges_with_gaps(all_gaps, start_end00, start_end10, start_end20, start_end30)
+        start_end51 = extend_ranges_with_gaps(all_gaps, start_end00, start_end10, start_end20, start_end30, start_end40)
 
     # Now, build a tree from these.
-    node00 = (start_end00, {}, None, None)
-    node10 = (start_end10, short_gaps, node00, None)
-    node20 = (start_end20, short_gaps, node10, None)
-    node30 = (start_end30, short_gaps, node20, None)
-    node40 = (start_end40, short_gaps, node30, None)
+    node00 = (start_end00, {}, None, None, start_end00)
+    node10 = (start_end10, short_gaps, node00, None, start_end00)
+    node20 = (start_end20, short_gaps, node10, None, start_end00)
+    node30 = (start_end30, short_gaps, node20, None, start_end00)
+    node40 = (start_end40, short_gaps, node30, None, start_end00)
     if is_refseq:
-        return (start_end50, short_gaps, node40, None)
-    node11 = (start_end11, all_gaps, node00, node00)
-    node21 = (start_end21, all_gaps, node11, node10)
-    node31 = (start_end31, all_gaps, node21, node20)
-    node41 = (start_end41, all_gaps, node31, node30)
-    node51 = (start_end51, all_gaps, node41, node40)
+        return (start_end50, short_gaps, node40, None, start_end00)
+    node11 = (start_end11, all_gaps, node00, node00, start_end00)
+    node21 = (start_end21, all_gaps, node11, node10, start_end00)
+    node31 = (start_end31, all_gaps, node21, node20, start_end00)
+    node41 = (start_end41, all_gaps, node31, node30, start_end00)
+    node51 = (start_end51, all_gaps, node41, node40, start_end00)
     return node51
 #get_ranges
 
@@ -439,10 +461,15 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
 
     # Insert a scaffold that reaches not quite to end_pos just yet.
     gaps = ranges[1]
+    ranges_without_gaps_here = ranges[-1][start_pos]
     for gap_pos, scaffold_list in scaffolds_here.items():
 
         if gap_pos not in gaps:
             continue
+
+        anchorable_before_gap, orphaned_before_gap = ranges_without_gaps_here[gap_pos]
+        anchorable_before = anchored | anchorable_before_gap  # Possibly.
+        orphaned_before = orphans | orphaned_before_gap  # Certainly.
 
         # Choose the next gap and continue the structure on the other side.
         for next_pos, gapseq in gaps[gap_pos].items():
@@ -450,9 +477,12 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
             remaining_ranges = ranges[2 if gap_len <= NAMING_OPTIONS["max_gap"] else 3]
 
             try:
-                anchorable_after_gap = remaining_ranges[0][next_pos][end_pos]
+                anchorable_after_gap, orphaned_after_gap = remaining_ranges[0][next_pos][end_pos]
             except KeyError:
                 continue  # Can't reach from next_pos to end_pos.
+
+            if (orphaned_before | orphaned_after_gap) - (anchorable_before | anchorable_after_gap):
+                continue  # Using this gap implies we will end up with orphans.
 
             for scaffold, anchored2, orphans2 in scaffold_list:
                 if prev_gap == scaffold[0][2]:
@@ -462,6 +492,8 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 if not prev_gap and not scaffold[0][3][3]:
                     continue  # Can't start with this non-ref repeat unit.
                 now_anchored = anchored | anchored2
+                if orphaned_after_gap - now_anchored:
+                    continue  # Unavoidable orphans at the other side of the gap.
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if now_orphaned - anchorable_after_gap:
                     continue  # Can't anchor all our orphans at the other side of the gap.
@@ -505,7 +537,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         has_suffix = pos_suffix in end_positions
 
         # First, try to reach exactly from prefix to suffix.
-        if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix]:
+        if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix] and not ranges[0][len_prefix][pos_suffix][1]:
             for result in recurse_gen_path(len_prefix, pos_suffix, scaffolds, ranges, endtime):
                 success = True
                 yield result
@@ -518,15 +550,16 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         # or finishing at the start of suffix separately.
         if has_prefix:
             for end_pos in end_positions & ranges[0][len_prefix].keys():
-                for result in recurse_gen_path(len_prefix, end_pos, scaffolds, ranges, endtime):
-                    success = True
-                    yield result
+                if not ranges[0][len_prefix][end_pos][1]:
+                    for result in recurse_gen_path(len_prefix, end_pos, scaffolds, ranges, endtime):
+                        success = True
+                        yield result
             if not success:
                 # Turns out we can't start from len_prefix.
                 start_positions.remove(len_prefix)
         if has_suffix:
             for start_pos in start_positions:
-                if pos_suffix in ranges[0][start_pos]:
+                if pos_suffix in ranges[0][start_pos] and not ranges[0][start_pos][pos_suffix][1]:
                     for result in recurse_gen_path(start_pos, pos_suffix, scaffolds, ranges, endtime):
                         success = True
                         yield result
@@ -537,7 +570,8 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
             # No path with anchored prefix OR suffix found; try everything else.
             for start_pos in start_positions:
                 for end_pos in end_positions & ranges[0][start_pos].keys():
-                    yield from recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime)
+                    if not ranges[0][start_pos][end_pos][1]:
+                        yield from recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime)
 
     else:
         # Refseq structures must include a significant repeat of at least 8 nt.
@@ -559,7 +593,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
                 start_pos + NAMING_OPTIONS["min_structure_length"],
                 minimal_end_pos_table[significant_repeat[0]])
             for end_pos in end_positions & ranges[0][start_pos].keys():
-                if end_pos >= minimal_end_pos:
+                if end_pos >= minimal_end_pos and not ranges[0][start_pos][end_pos][1]:
                     yield from recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime)
 #gen_all_paths
 
