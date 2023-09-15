@@ -292,6 +292,7 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
 
     scaffold_end_pos = scaffold[-1][1]
     scaffold_end_unit = scaffold[-1][2]
+    units_limit_reached = len(anchored | orphans) >= 6
     for next_i, repeat in enumerate(itertools.islice(repeats, start, None), start + 1):
         repeat_start_pos = repeat[0]
         if repeat_start_pos < scaffold_end_pos:
@@ -305,15 +306,20 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
             # have been split up by upstream code to allow more junctions.)
             continue
 
+        unit_is_anchored = unit in anchored
+        unit_is_orphan = unit in orphans
+        if units_limit_reached and not unit_is_anchored and not unit_is_orphan:
+            continue  # Limit the number of different units in one scaffold.
+
         new_scaffold = scaffold + [repeat]
         new_anchored = anchored
         new_orphans = orphans
         if repeat[3][2]:
-            if unit not in anchored:
+            if not unit_is_anchored:
                 new_anchored = unique_set(sets, new_anchored | {unit})
-                if unit in orphans:
+                if unit_is_orphan:
                     new_orphans = unique_set(sets, new_orphans - {unit})
-        elif unit not in anchored and unit not in orphans:
+        elif not unit_is_anchored and not unit_is_orphan:
             new_orphans = unique_set(sets, new_orphans | {unit})
         yield (new_scaffold, new_anchored, new_orphans)
         yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, next_i, sets)
@@ -373,14 +379,20 @@ def extend_with_gaps(extended, gap_ranges, ranges_before, ranges_after):
             if gap_start in gap_ranges:
                 for gap_end in gap_ranges[gap_start]:
                     for final_end, (more_anchorables, more_orphans) in ranges_after[gap_end].items():
+                        must_use_units = orphans | more_orphans
+                        if len(must_use_units) > 6:
+                            # This combination of before-range and after-range is not valid,
+                            # because it uses too many different units. Note that this filter is
+                            # not perfect, as we only know the number of must-orphan units.
+                            continue
                         if final_end in subtree:
                             existing_anchorables, existing_orphans = subtree[final_end]
                             new_anchorables = existing_anchorables | anchorables | more_anchorables
-                            new_orphans = ((orphans | more_orphans) & existing_orphans) - new_anchorables
+                            new_orphans = (must_use_units & existing_orphans) - new_anchorables
                             subtree[final_end] = (new_anchorables, new_orphans)
                         else:
                             new_anchorables = anchorables | more_anchorables
-                            new_orphans = (orphans | more_orphans) - new_anchorables
+                            new_orphans = must_use_units - new_anchorables
                             subtree[final_end] = (new_anchorables, new_orphans)
 #extend_with_gaps
 
@@ -448,6 +460,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
         raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
+        units_so_far = anchored | orphans
         for scaffold, anchored2, orphans2 in scaffolds_here[end_pos]:
             if prev_gap == scaffold[0][2]:
                 continue  # Scaffold must not start with unit equal to previous gap.
@@ -455,6 +468,8 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 continue  # Can't start or end with a non-ref repeat unit.
             if orphans - anchored2 or orphans2 - anchored:
                 continue  # Would end up with orphans.
+            if len(units_so_far | anchored2 | orphans2) > 6:
+                continue  # Would end up with too many different units.
             yield scaffold
     except KeyError:
         pass  # No scaffolds reach exactly from start_pos to end_pos.
@@ -484,6 +499,10 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
             if (orphaned_before | orphaned_after_gap) - (anchorable_before | anchorable_after_gap):
                 continue  # Using this gap implies we will end up with orphans.
 
+            # The following check is meant to improve performance, but it might take more time than it saves.
+            #if len(anchored | orphaned_before | orphaned_after_gap) > 6:
+            #    continue  # Using this gap implies we will be using too many different units.
+
             for scaffold, anchored2, orphans2 in scaffold_list:
                 if prev_gap == scaffold[0][2]:
                     continue  # Scaffold must not start with unit equal to previous gap.
@@ -497,6 +516,8 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if now_orphaned - anchorable_after_gap:
                     continue  # Can't anchor all our orphans at the other side of the gap.
+                if len(now_anchored | now_orphaned) > 6:
+                    continue  # Would end up with too many different units.
                 for substructure in recurse_gen_path(next_pos, end_pos,
                         scaffolds, remaining_ranges, endtime,
                         now_anchored, now_orphaned, gapseq):
