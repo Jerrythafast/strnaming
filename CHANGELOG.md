@@ -2,6 +2,11 @@ STRNaming Changelog
 ===================
 ### Version 1.2.0 (TBD)
 * Scoring will now always use the block length of the reference structure.
+* Structures will never contain more than 6 different repeat units anymore.
+* Repeats that completely overlap with a singleton of a longer unit are no
+  longer ignored (e.g., allow A[4] in the place of AAAAG[1]).
+* Singletons are now ignored if they completely overlap any 8nt+ repeat of
+  a preferred unit.
 * Updated reference sequence analysis:
   * Changed rule: longest stretch (as measured in nt) in reference structure
     does not need to be repeated 4 times anymore.

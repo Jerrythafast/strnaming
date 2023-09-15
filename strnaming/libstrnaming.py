@@ -656,7 +656,7 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_lengt
 #get_best_path
 
 
-def find_repeat_stretches(seq, units, allow_one, repeats=None):
+def find_repeat_stretches(seq, units, allow_one, preferred_units, repeats=None):
     """Return a list of repeat stretches. The input units must be sorted by decreasing length."""
     # Find all stretches of each repeated unit.
     if repeats is None:
@@ -692,19 +692,17 @@ def find_repeat_stretches(seq, units, allow_one, repeats=None):
     # Sort repeats.
     repeats.sort()
 
-    # Remove singletons that completely overlap a 5+ repeat stretch
-    # of a shorter unit that is embedded in the singleton. (Can only occur with singletons.)
-    # For example, remove singletons of 'ACTA' in a 5+ repeat stretch of 'ACT'.
-    significant_ranges = [(o_start, o_end, o_unit)
+    # Remove singletons that completely overlap an 8nt+ repeat of a preferred unit.
+    significant_ranges = [(o_start, o_end)
         for o_start, o_end, o_unit in repeats
-        if (o_end - o_start) // len(o_unit) > MANY_TIMES]
+        if o_unit in preferred_units
+        and o_end - o_start >= 8]
     i = 0
     while i < len(repeats):
         start, end, unit = repeats[i]
         if (len(unit) == end - start and  # Current is singleton
-                any(len(o_unit) < len(unit) and  # Other is shorter unit
-                    start >= o_start and end <= o_end  # Overlap
-                    for o_start, o_end, o_unit in significant_ranges)):
+                any(start >= o_start and end <= o_end  # Overlap
+                    for o_start, o_end in significant_ranges)):
             # The current (singleton) unit overlaps completely with a significant repeat.
             del repeats[i]
         else:
@@ -725,7 +723,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
 
     # Find stretches of the preferred units first,
     # then find more units outside those stretches.
-    repeats = find_repeat_stretches(seq, preferred_units, True)
+    repeats = find_repeat_stretches(seq, preferred_units, True, preferred_units)
     for i, (start, end, preferred_unit) in enumerate(repeats):
         if start:
             # Find units before repeat i.
@@ -780,7 +778,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
     find_repeat_stretches(
         seq,
         [unit for unit in units if unit not in preferred_units],
-        False, repeats)
+        False, preferred_units, repeats)
 
     # Where repeat stretches overlap, also include trimmed copies that don't overlap.
     repeat_trims = tuple(({0}, {0}) for x in range(len(repeats)))
