@@ -1,5 +1,10 @@
 STRNaming Changelog
 ===================
+### Version 1.2.0 (TBD)
+* Updated reference sequence analysis:
+  * Changed rule: longest stretch (as measured in nt) in reference structure
+    does not need to be repeated 4 times anymore.
+
 ### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
 * ReportedRange.get_stretches() now attempts a quick regex match against the

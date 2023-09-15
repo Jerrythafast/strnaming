@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2022 Jerry Hoogenboom
+# Copyright (C) 2023 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -480,9 +480,7 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
                 else:
                     singletons.add(unit)
         if not singletons - repeated_units:
-            if not is_refseq or longest_stretch >= block_length * MANY_TIMES:
-                # For reference sequences, the longest stretch must be significant.
-                yield result
+            yield result
 #gen_valid_paths
 
 
