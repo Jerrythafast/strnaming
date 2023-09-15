@@ -1,6 +1,7 @@
 STRNaming Changelog
 ===================
 ### Version 1.2.0 (TBD)
+* Scoring will now always use the block length of the reference structure.
 * Updated reference sequence analysis:
   * Changed rule: longest stretch (as measured in nt) in reference structure
     does not need to be repeated 4 times anymore.

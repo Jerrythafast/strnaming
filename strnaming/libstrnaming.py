@@ -181,6 +181,11 @@ def find_repeated_units(seq, cycle_units):
 #find_repeated_units
 
 
+def find_block_length(path, len_or_int=int):
+    return max((end - start, len_or_int(unit)) for start, end, unit, *_ in path)[1]
+#find_block_length
+
+
 def find_overlong_gap(units):
     """Return the longest interruption, if that interruption is longer than max_gap."""
     longest_gap = NAMING_OPTIONS["max_gap"]
@@ -576,17 +581,18 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 #gen_all_paths
 
 
-def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_gap=-1):
+def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, ref_len_large_gap):
     """Return combination of repeats that maximises calc_path_score."""
     len_prefix = len(prefix) if prefix is not None else -1
     len_suffix = len(suffix) if suffix is not None else -1
     len_seq = len(seq)
-    is_refseq = ref_len_large_gap == -1
+    is_refseq = ref_block_length == 0
     best_score = -sys.maxsize
     best_path = []
     endtime = time.monotonic() + (MAX_SECONDS_REFSEQ if is_refseq else MAX_SECONDS)
 
-    for path, (_, block_length) in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+    for path, _ in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+        block_length = ref_block_length or find_block_length(path, len_or_int=len)
 
         # Calculate the score of the current path.
         score = calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path,
@@ -608,7 +614,6 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_len_large_g
                     continue
             best_score = score
             best_path = path
-
     return best_score, [repeat[:3] for repeat in best_path]
 #get_best_path
 
@@ -785,7 +790,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
 ### Entry point for target analysis ###
 
 
-def collapse_repeat_units(seq, prefix, suffix, preferred_units, overlong_gap):
+def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length, overlong_gap):
     """
     Combine repeat units in the given sequence.
     """
@@ -802,7 +807,7 @@ def collapse_repeat_units(seq, prefix, suffix, preferred_units, overlong_gap):
     repeats = find_everything(seq, unit_locations)
 
     # Find best combination of repeat unit usage.
-    score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, len(overlong_gap))
+    score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, len(overlong_gap))
     return path
 #collapse_repeat_units
 
@@ -865,16 +870,26 @@ def collapse_repeat_units_refseq(seq, *, allow_close=0):
                 unit_locations = find_repeated_units(range_seq, True)
                 preferred_units = sorted(unit_locations, key=len, reverse=True)
                 repeats = find_everything(range_seq, unit_locations)
-                new_score, new_path = get_best_path(None, None, range_seq, repeats, preferred_units)
+                new_score, new_path = get_best_path(None, None, range_seq, repeats, preferred_units, 0, 0)
                 if new_score > score:
                     score = new_score
                     path = [[start + range_start, end + range_start, unit]
                         for start, end, unit in new_path] if range_start else new_path
         else:
             # Find the best combination of repeat unit usage.
-            prefix = None if not previous_path else seq[:previous_path[0][0]]
-            suffix = None if not previous_path else seq[previous_path[-1][1]:]
-            score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, large_gap_length)
+            if not previous_path:
+                # Bootstrap values.
+                prefix = None
+                suffix = None
+                block_length = 0
+                large_gap_length = 0
+            else:
+                prefix = seq[:previous_path[0][0]]
+                suffix = seq[previous_path[-1][1]:]
+                block_length = find_block_length(previous_path, len_or_int=len)
+                large_gap = find_overlong_gap(previous_path)
+                large_gap_length = large_gap[1] - large_gap[0] if large_gap else 0
+            score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, block_length, large_gap_length)
 
         # Log a warning if repeats occur very close to either end of the sequence.
         # The name may not be stable if this is the case.
@@ -898,8 +913,6 @@ def collapse_repeat_units_refseq(seq, *, allow_close=0):
             used_units = set(unit for start, end, unit in path if end - start > len(unit))
             unit_locations = {unit: [(0, len(seq))] for unit in used_units}
             previous_path = path
-            large_gap = find_overlong_gap(path)
-            large_gap_length = large_gap[1] - large_gap[0] if large_gap else 0
         else:
             return score, path
 #collapse_repeat_units_refseq

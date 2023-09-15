@@ -400,6 +400,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             # Store end position of last structure for later suffix/postinsert adjustment.
             last_structure_end = structure[-1][1]
 
+            # Determine the block_length of the full reference structure.
+            block_length = libstrnaming.find_block_length(structure),
+
             # Find unique repeat units.
             units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
                 for stretch in sorted(structure,
@@ -430,6 +433,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 self.postinsert = refseq_store.get_refseq(chromosome, end, structure[-1][1])
 
             # Update block_length if this structure contains the longest stretch so far.
+            # NOTE: The ReportedRange's block_length is determined by in-range stretches only!
             for stretch_start, stretch_end, unit_length in structure:
                 stretch_length = stretch_end - stretch_start
                 if stretch_length < longest_stretch:
@@ -458,6 +462,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
                 # The repeat units in the reference STR structure.
                 "units": units,
+
+                # The unit length of the longest repeat in the reference STR structure.
+                "block_length": block_length,
 
                 # A compiled regular expression that matches the reference structure.
                 "regex": regex
@@ -534,7 +541,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             else:
                 try:
                     path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
-                        part["prefix"], suffix, part["units"], part["overlong_gap"])
+                        part["prefix"], suffix, part["units"], part["block_length"], part["overlong_gap"])
                 except libstrnaming.OutOfTimeException:
                     # TODO: Add range name to this message (and possibly others).
                     sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
