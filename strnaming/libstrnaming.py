@@ -552,8 +552,14 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
                     yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
 
     else:
-        # Refseq structures must include a significant repeat.
-        significant_repeats = (r for r in repeats if r[3][0] >= r[3][1] * MANY_TIMES)
+        # Refseq structures must include a significant repeat of at least 8 nt.
+        significant_repeats = [r for r in repeats if r[3][0] >= max(NAMING_OPTIONS["min_repeat_length"], r[3][1] * MANY_TIMES)]
+        minimal_end_pos_table = {}
+        minimal_end_pos = len(seq)
+        for repeat in reversed(significant_repeats):
+            minimal_end_pos = min(minimal_end_pos, repeat[1])
+            minimal_end_pos_table[repeat[0]] = minimal_end_pos
+        significant_repeats = iter(significant_repeats)
         significant_repeat = next(significant_repeats, None)
         for start_pos in sorted(start_positions):
             while significant_repeat is not None and significant_repeat[0] < start_pos:
@@ -563,7 +569,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
                 return
             minimal_end_pos = max(
                 start_pos + NAMING_OPTIONS["min_structure_length"],
-                significant_repeat[1])
+                minimal_end_pos_table[significant_repeat[0]])
             for end_pos in end_positions & ranges[0][start_pos].keys():
                 if end_pos >= minimal_end_pos:
                     yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, True, endtime)

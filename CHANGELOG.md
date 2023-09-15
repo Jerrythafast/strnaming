@@ -4,6 +4,8 @@ STRNaming Changelog
 * Updated reference sequence analysis:
   * Changed rule: longest stretch (as measured in nt) in reference structure
     does not need to be repeated 4 times anymore.
+  * Refseq analysis did not consider all possible start/stop combinations
+    where significant repeats overlap.
 
 ### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
