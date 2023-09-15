@@ -20,7 +20,7 @@
 #
 import re, sys
 
-from . import length_adjustments, libsequence, libstrnaming, refseq_cache, reference_structures, html
+from . import length_adjustments, libsequence, libstrnaming, refseq_analysis, refseq_cache, reference_structures, html
 # TODO: Proper argument/input checking for all classes/methods!
 
 
@@ -172,7 +172,7 @@ class ReferenceStructureStore:
         loaded from disk cache or downloaded from Ensembl if necessary.
         """
         seq = self.refseq_store.get_refseq(chromosome, start, end, autoload=autoload)
-        for structure in libstrnaming.recurse_collapse_repeat_units_refseq(seq, offset=start):
+        for structure in refseq_analysis.recurse_collapse_repeat_units_refseq(seq, offset=start):
             self.add_structure(
                 chromosome, [[s_start, s_end, len(unit)] for s_start, s_end, unit in structure])
 
