@@ -675,7 +675,8 @@ def find_repeat_stretches(seq, units, allow_one, repeats=None):
         # if they overlap with unpreferred repeats. This is the desired behaviour.
         # Example markers where this filter has an effect: DYF387S1, PentaD, DYS448.
         ignore_ranges = [(o_start, o_end) for o_start, o_end, o_unit in repeats
-                if len(unit) < len(o_unit)]  # Other is longer unit (will be 4+)
+            if len(unit) < len(o_unit)  # Other is longer unit (will be 4+)
+            and o_end - o_start >= 8]  # Other is repeated
 
         pos = 0
         while True:
