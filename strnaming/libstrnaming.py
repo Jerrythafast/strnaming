@@ -18,7 +18,6 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
-
 import itertools, math, re, sys, time
 
 from functools import reduce
@@ -128,7 +127,7 @@ def recurse_find_longest_repeat(seq, matrix=None):
 #recurse_find_longest_repeat
 
 
-def find_repeated_units(seq, cycle_units):
+def find_repeated_units(seq):
     """Return a dict of repeat units found in seq."""
     units = {}
     pos = 0
@@ -142,26 +141,7 @@ def find_repeated_units(seq, cycle_units):
             except KeyError:
                 units[unit] = [repeat]
         pos += r_len
-
-    if not cycle_units:
-        return units
-
-    # Cycle units.
-    newunits = {unit: repeats.copy() for unit, repeats in units.items()}
-    for unit, repeats in units.items():
-        for i in range(1, len(unit)):
-            newunit = unit[i:] + unit[:i]
-            regex = re.compile("^(" + newunit + "){2,}")
-            for pos, r_len in repeats:
-                start = pos + i
-                newmatch = regex.match(seq[start : start + r_len])
-                if newmatch:
-                    newrepeat = (start, newmatch.end(0))
-                    try:
-                        newunits[newunit].append(newrepeat)
-                    except KeyError:
-                        newunits[newunit] = [newrepeat]
-    return newunits
+    return units
 #find_repeated_units
 
 
@@ -170,13 +150,13 @@ def find_block_length(path, len_or_int=int):
 #find_block_length
 
 
-def find_overlong_gap(units):
+def find_overlong_gap(path):
     """Return the longest interruption, if that interruption is longer than max_gap."""
     longest_gap = NAMING_OPTIONS["max_gap"]
     longest_start_pos = 0
-    for i in range(1, len(units)):
-        start_pos = units[i - 1][1]
-        gap_length = units[i][0] - start_pos
+    for i in range(1, len(path)):
+        start_pos = path[i - 1][1]
+        gap_length = path[i][0] - start_pos
         if gap_length > longest_gap:
             longest_gap = gap_length
             longest_start_pos = start_pos
@@ -319,7 +299,7 @@ def get_scaffolds(repeats):
     scaffolds = {}
     for n, scaffold in enumerate(generate_scaffolds(repeats)):
         if n == 5000000:
-            raise ComplexityException()  # More than 5 million scaffolds?!
+            raise ComplexityException("%r" % repeats)  # More than 5 million scaffolds?!
         start = scaffold[0][0][0]
         end = scaffold[0][-1][1]
         if start not in scaffolds:
@@ -608,7 +588,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 #gen_all_paths
 
 
-def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, ref_len_large_gap):
+def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, ref_len_large_gap, offset=0):
     """Return combination of repeats that maximises calc_path_score."""
     len_prefix = len(prefix) if prefix is not None else -1
     len_suffix = len(suffix) if suffix is not None else -1
@@ -641,7 +621,7 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_lengt
                     continue
             best_score = score
             best_path = path
-    return best_score, [repeat[:3] for repeat in best_path]
+    return best_score, [[repeat[0] + offset, repeat[1] + offset, repeat[2]] for repeat in best_path]
 #get_best_path
 
 
@@ -701,75 +681,10 @@ def find_repeat_stretches(seq, units, allow_one, preferred_units, repeats=None):
 #find_repeat_stretches
 
 
-def find_everything(seq, unit_locations):  # FIXME, awful name.
+def trim_overlapping_repeats(repeats, preferred_units):
     """
-    The provided unit_locations are taken to represent the preferred units.
-    Unit search will start around these; locations of newly found units
-    will be added to the object passed in.
+    Where repeat stretches overlap, also include trimmed copies that don't overlap.
     """
-    # Sort preferred units, longest come first.
-    preferred_units = sorted(unit_locations, key=len, reverse=True)
-
-    # Find stretches of the preferred units first,
-    # then find more units outside those stretches.
-    repeats = find_repeat_stretches(seq, preferred_units, True, preferred_units)
-    for i, (start, end, preferred_unit) in enumerate(repeats):
-        if start:
-            # Find units before repeat i.
-            locations = find_repeated_units(seq[:start], False)
-            for unit in locations:
-                try:
-                    unit_locations[unit] += locations[unit]
-                except KeyError:
-                    unit_locations[unit] = locations[unit]
-        if len(seq) - end:
-            # Find units after repeat i.
-            locations = find_repeated_units(seq[end:], False)
-            for unit in locations:
-                new_locations = [(x[0] + end, x[1]) for x in locations[unit]]
-                try:
-                    unit_locations[unit] += new_locations
-                except KeyError:
-                    unit_locations[unit] = new_locations
-        if i:
-            # Find units between repeat i-1 and repeat i.
-            prev_end = repeats[i-1][1]
-            if prev_end < start:
-                locations = find_repeated_units(seq[prev_end : start], False)
-                for unit in locations:
-                    new_locations = [(x[0] + prev_end, x[1]) for x in locations[unit]]
-                    try:
-                        unit_locations[unit] += new_locations
-                    except KeyError:
-                        unit_locations[unit] = new_locations
-
-    # If no stretches of preferred units were found, just find any stretches.
-    if not repeats:
-        locations = find_repeated_units(seq, False)
-        for unit in locations:
-            try:
-                unit_locations[unit] += locations[unit]
-            except:
-                unit_locations[unit] = locations[unit]
-
-    # Deduplicate unit_locations.
-    for unit in unit_locations:
-        unit_locations[unit].sort()
-        i = 1
-        while i < len(unit_locations[unit]):
-            if tuple(unit_locations[unit][i-1]) == tuple(unit_locations[unit][i]):
-                del unit_locations[unit][i]
-            else:
-                i += 1
-
-    # Find all stretches of each newly-discovered repeated unit and add those to the list.
-    units = sorted(unit_locations, key=len, reverse=True)
-    find_repeat_stretches(
-        seq,
-        [unit for unit in units if unit not in preferred_units],
-        False, preferred_units, repeats)
-
-    # Where repeat stretches overlap, also include trimmed copies that don't overlap.
     repeat_trims = tuple(({0}, {0}) for x in range(len(repeats)))
     for i in range(len(repeats)):
         for j in range(i + 1, len(repeats)):
@@ -808,6 +723,79 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
             del repeats[i]
         else:
             i += 1
+#trim_overlapping_repeats
+
+
+def find_everything(seq, unit_locations):  # FIXME, awful name.
+    """
+    The provided unit_locations are taken to represent the preferred units.
+    Unit search will start around these; locations of newly found units
+    will be added to the object passed in.
+    """
+    # Sort preferred units, longest come first.
+    preferred_units = sorted(unit_locations, key=len, reverse=True)
+
+    # Find stretches of the preferred units first,
+    # then find more units outside those stretches.
+    repeats = find_repeat_stretches(seq, preferred_units, True, preferred_units)
+    for i, (start, end, preferred_unit) in enumerate(repeats):
+        if start:
+            # Find units before repeat i.
+            locations = find_repeated_units(seq[:start])
+            for unit in locations:
+                try:
+                    unit_locations[unit] += locations[unit]
+                except KeyError:
+                    unit_locations[unit] = locations[unit]
+        if len(seq) - end:
+            # Find units after repeat i.
+            locations = find_repeated_units(seq[end:])
+            for unit in locations:
+                new_locations = [(x[0] + end, x[1]) for x in locations[unit]]
+                try:
+                    unit_locations[unit] += new_locations
+                except KeyError:
+                    unit_locations[unit] = new_locations
+        if i:
+            # Find units between repeat i-1 and repeat i.
+            prev_end = repeats[i-1][1]
+            if prev_end < start:
+                locations = find_repeated_units(seq[prev_end : start])
+                for unit in locations:
+                    new_locations = [(x[0] + prev_end, x[1]) for x in locations[unit]]
+                    try:
+                        unit_locations[unit] += new_locations
+                    except KeyError:
+                        unit_locations[unit] = new_locations
+
+    # If no stretches of preferred units were found, just find any stretches.
+    if not repeats:
+        locations = find_repeated_units(seq)
+        for unit in locations:
+            try:
+                unit_locations[unit] += locations[unit]
+            except:
+                unit_locations[unit] = locations[unit]
+
+    # Deduplicate unit_locations.
+    for unit in unit_locations:
+        unit_locations[unit].sort()
+        i = 1
+        while i < len(unit_locations[unit]):
+            if tuple(unit_locations[unit][i-1]) == tuple(unit_locations[unit][i]):
+                del unit_locations[unit][i]
+            else:
+                i += 1
+
+    # Find all stretches of each newly-discovered repeated unit and add those to the list.
+    units = sorted(unit_locations, key=len, reverse=True)
+    find_repeat_stretches(
+        seq,
+        [unit for unit in units if unit not in preferred_units],
+        False, preferred_units, repeats)
+
+    # Where repeat stretches overlap, also include trimmed copies that don't overlap.
+    trim_overlapping_repeats(repeats, preferred_units)
 
     # Add (repeat_length, unit_length, anchor, preferred) to the end.
     for repeat in repeats:
@@ -844,3 +832,110 @@ def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length
     score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, len(overlong_gap))
     return path
 #collapse_repeat_units
+
+
+"""
+Differences Naming after Refseq:
+* Can start to introduce one gap of more than 8 nt (up to 20 nt) without inflicting the prefix_suffix_factor penalty
+* Block length no longer varies per path, so nice gap points may change for previously-not-optimal paths
+* Preferred-unit repeats < 8 nt become anchoring, so can now choose to use only < 8 nt repeats of a unit
+* Some (or many) units may become unpreferred, making repeat trimming and filtering much less aggressive
+
+
+Refseq Rules:
+
+collapse_repeat_units_refseq:
+  * 1. Start search around the longest repeat, cancel if not 8+ nt AND 4+ repeats
+  * 2. Extend region to include nearby repeats of 8+ nt, if they reach within 20 nt of current region
+  * 3. Determine set of repeat units that have a repeat of 8+ nt within the region
+  * 4. Extend region to include all nearby instances of those units; stop before the first gap strictly larger than 8 nt
+  * 5. Loop back to 2 if more 8+ nt repeats come within 20 nt of the current region
+  * 6. Call find_repeat_stretches: all units are preferred and singletons are allowed
+  * 7. Call trim_overlapping_repeats: all overlapping repeats are trimmed, as long as the trimmed repeat is at least 3 nt long
+  * 8. All repeats are tagged as preferred; all repeats of 8+ nt are tagged as anchoring
+  * 9. After get_best_path, only units that are used in non-singleton positions are tagged as preferred
+  * 10. Perform regular allele naming (find_everything + get_best_path), looping back to 9 until the same name is obtained consecutively
+
+
+Naming Rules:
+
+collapse_repeat_units:
+  * Units used in the refseq name are the preferred units
+  * Just call find_everything and then get_best_path to obtain the best path
+
+
+Repeat Finding Rules:
+
+find_everything:
+  * Call find_repeat_stretches with the preferred units, allowing singletons
+  * If any repeat stretches of preferred units are found, call find_repeated_units on the follwing ranges:
+    * All sequence before the start of a repeat stretch of a preferred unit (for each repeat stretch)
+    * All sequence after the end of a repeat stretch of a preferred unit (for each repeat stretch)
+    * All sequence between two consecutive repeat stretches of preferred units (for each pair of consecutive repeat stretches)
+  * Otherwise, call find_repeated_units on the entire sequence once
+  * Call find_repeat_stretches with the non-preferred units, disallowing singletons, adding to the list of preferred repeats
+  * Call trim_overlapping_repeats
+  * Mark as anchoring:
+    * All repeats (including singletons) of preferred units
+    * Non-preferred repeats that overlap a location (even by 1 nt) for that unit as returned by any find_repeated_units call
+
+find_repeat_stretches:
+  * Minimum stretch length is 3 nt
+  * Singletons are only allowed for preferred repeat units
+  * Ignore repeats that completely overlap a 8nt+ repeat of a longer unit (this requires sorted input)
+  * Remove singletons that completely overlap a 8+ nt stretch of a preferred unit
+
+trim_overlapping_repeats:
+  * Add trimmed copies of repeat stretches with a minimum length of 3 nt for preferred units and 8 nt for non-preferred units
+  * Where two preferred repeats overlap, add trimmed copies of both
+  * If one (or both) of the repeats is non-preferred, only add trimmed copies if doing so leaves no gap
+
+find_repeated_units:
+  * Recursively find the longest non-overlapping repeat and return its starting position and length
+  * The cycle_units option is no longer used  --> removed
+
+recurse_find_longest_repeat:
+  * Report only repeat stretches of 8+ nt
+
+find_longest_repeat:
+  * Break ties by choosing the shortest unit, the earliest in the sequence
+
+
+Best Path Rules:
+
+calc_path_score
+  * For non-refseq, preferred units always count as used
+
+get_best_path
+  * Choose the path with the highest score
+  * In case of a tie, prefer fewer stretches if possible
+  * Prefer the most 5' starting position(s) otherwise
+  * For non-refseq, block length is fixed to refseq's block length
+
+gen_all_paths
+  * Start and end with a repeat marked as *preferred*
+  * For non-refseq:
+    * Ignore repeat stretches completely in prefix or suffix
+    * Only yield paths that reach exactly from prefix to suffix if possible
+    * Else, yield all paths that start at prefix or end at suffix
+    * If none of that is possible, just yield all possible paths
+  * For refseq:
+    * Yield only paths that span a stretch of MANY_TIMES=4 repeats and 8nt or longer
+    * Yield only paths that are at least min_structure_length=20 nt
+
+recurse_gen_path
+  * Require that paths start and end with a repeat marked as *preferred*
+  * Require that paths leave no orphans
+  * Don't make gaps with sequence equal to an adjacent repeat unit
+
+get_ranges
+  * Make at most 5 gaps
+  * Don't make large gaps (>8 nt) in reference sequences
+
+get_gaps
+  * Don't suggest gaps that can be filled with a scaffold without orphans
+  * Don't suggest gaps that have the same sequence as adjacent units
+
+generate_scaffolds
+  * Don't put repeats of the same unit adjacently
+"""
