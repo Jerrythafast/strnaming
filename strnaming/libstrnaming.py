@@ -29,8 +29,6 @@ import json #FIXME, temp
 
 # Version 2020.12.15.01
 
-TRIM_FOR_SINGLETONS = True  # STRNaming was trained with 'True', but JS version always had 'False'. Not sure what's better.
-
 # Maximum number of seconds that get_best_path() may spend.
 MAX_SECONDS = 30
 MAX_SECONDS_REFSEQ = 300
@@ -42,7 +40,6 @@ MANY_TIMES = 4
 # TODO: Split these up into separate globals.
 # TODO: Put alignment settings here?
 NAMING_OPTIONS = {
-    "min_repeats": 2,
     "min_repeat_length": 8,
     "min_structure_length": 20,
     "max_unit_length": 6,
@@ -79,24 +76,22 @@ def detect_repeats(seq):
     Return a matrix of max_unit_length x len(seq) elements.
     The value at position (j,i) gives the length of a repeat of units of
     length j (in number of units), ending in position i in the sequence.
-    This function will only accept repeats of min_repeats or more units;
-    it will report a length of 1 for any repeat shorter than this.
     """
     len_seq = len(seq)
     matrix = [[0]*len_seq for j in range(NAMING_OPTIONS["max_unit_length"])]
-    for i in range(len_seq):
-        for j in range(NAMING_OPTIONS["max_unit_length"]):
+    for j in range(NAMING_OPTIONS["max_unit_length"]):
+        row = matrix[j]
+        for i in range(len_seq):
             if i <= j:
-                matrix[j][i] = i + 1  # No full unit yet.
+                row[i] = i + 1  # No full unit yet.
             elif seq[i] != seq[i - j - 1]:
-                matrix[j][i] = j + 1  # Restart counting.
+                row[i] = j + 1  # Restart counting.
             else:
-                matrix[j][i] = matrix[j][i - 1] + 1
-    for i in range(len_seq):
-        for j in range(NAMING_OPTIONS["max_unit_length"]):
-            matrix[j][i] //= (j + 1)
-            if 0 < matrix[j][i] < NAMING_OPTIONS["min_repeats"]:
-                matrix[j][i] = 1;  # Ignore, too short.
+                row[i] = row[i - 1] + 1
+    for j in range(NAMING_OPTIONS["max_unit_length"]):
+        row = matrix[j]
+        for i in range(len_seq):
+            row[i] //= (j + 1)
     return matrix
 #detect_repeats
 
@@ -125,7 +120,7 @@ def recurse_find_longest_repeat(seq, matrix=None):
 
     # Degenerate case: no repeat found.  Short-circuit.
     length = end - start
-    if length < NAMING_OPTIONS["min_repeat_length"] or length < NAMING_OPTIONS["min_repeats"] * unit:
+    if length < NAMING_OPTIONS["min_repeat_length"]:
         yield (len(seq), len(seq))
         return
 
@@ -231,7 +226,7 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
     # Measure things about the path.
     pos = 0
     for start, end, unit, (repeat_length, unit_length, anchor, preferred) in path:
-        repeat_count = repeat_length // unit_length
+        repeat_count = repeat_length // unit_length  # Note: a -1 here would avoid counting singletons as a repeat and generally favour fewer stretches
         bases_covered += repeat_length
         repeats += repeat_count
         if preferred:
@@ -247,7 +242,11 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
 
     # Count interruptions of the most common unit length.
     nice_interruptions = sum(1 for x in interruptions if x == block_length)
-    large_gap_delta = len_large_gap - max(interruptions + [0]) if len_large_gap else 0
+    large_gap_delta = len_large_gap - max(interruptions, default=0) if len_large_gap else 0
+    #if not len_large_gap and interruptions and max(interruptions) > 8:
+    #    # TODO: investigate effect: Introducing a large gap while the refseq had none counts as an additional gap.
+    #    raise ValueError("Did not want to introduce this yet")
+    #    interruptions.append(0)
 
     # Calculate score.
     return sum((
@@ -270,11 +269,9 @@ def unique_set(all_sets, this_set):
     """
     Memory-saving helper function. Return an equivalent set from all_sets
     for this_set, or add this_set to all_sets and return this_set.
+    Note that this_set must be a frozenset.
     """
-    key = ",".join(sorted(this_set))
-    if key not in all_sets:
-        all_sets[key] = this_set
-    return all_sets[key]
+    return all_sets.setdefault(this_set, this_set)
 #unique_set
 
 
@@ -282,34 +279,44 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
     if sets is None:
         sets = {}
     if scaffold is None:
-        for i, repeat in enumerate(itertools.islice(repeats, start, None), start):
-            unit_len = len(repeat[2])
+        empty_set = unique_set(sets, frozenset())
+        for next_i, repeat in enumerate(itertools.islice(repeats, start, None), start + 1):
+            unit_set = unique_set(sets, frozenset({repeat[2]}))
+            anchor = repeat[3][2]
             new_scaffold = [repeat]
-            new_anchored = unique_set(sets, {repeat[2]} if repeat[3][2] else set())
-            new_orphans = unique_set(sets, set() if repeat[3][2] else {repeat[2]})
+            new_anchored = unit_set if anchor else empty_set
+            new_orphans = empty_set if anchor else unit_set
             yield (new_scaffold, new_anchored, new_orphans)
-            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
+            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, next_i, sets)
         return
 
     scaffold_end_pos = scaffold[-1][1]
     scaffold_end_unit = scaffold[-1][2]
-    for i, repeat in enumerate(itertools.islice(repeats, start, None), start):
-        # We're not putting repeats of the same unit adjacently. (Those
-        # have been split up by upstream code to allow more junctions.)
+    for next_i, repeat in enumerate(itertools.islice(repeats, start, None), start + 1):
+        repeat_start_pos = repeat[0]
+        if repeat_start_pos < scaffold_end_pos:
+            continue
+        if repeat_start_pos > scaffold_end_pos:
+            break  # The repeats are sorted, so we're done here.
+
         unit = repeat[2]
-        if repeat[0] == scaffold_end_pos and unit != scaffold_end_unit:
-            new_scaffold = scaffold + [repeat]
-            new_anchored = anchored
-            new_orphans = orphans
-            if repeat[3][2]:
-                if unit not in anchored:
-                    new_anchored = unique_set(sets, new_anchored | {unit})
-                    if unit in orphans:
-                        new_orphans = unique_set(sets, new_orphans - {unit})
-            elif unit not in anchored and unit not in orphans:
-                new_orphans = unique_set(sets, new_orphans | {unit})
-            yield (new_scaffold, new_anchored, new_orphans)
-            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
+        if unit == scaffold_end_unit:
+            # We're not putting repeats of the same unit adjacently. (Those
+            # have been split up by upstream code to allow more junctions.)
+            continue
+
+        new_scaffold = scaffold + [repeat]
+        new_anchored = anchored
+        new_orphans = orphans
+        if repeat[3][2]:
+            if unit not in anchored:
+                new_anchored = unique_set(sets, new_anchored | {unit})
+                if unit in orphans:
+                    new_orphans = unique_set(sets, new_orphans - {unit})
+        elif unit not in anchored and unit not in orphans:
+            new_orphans = unique_set(sets, new_orphans | {unit})
+        yield (new_scaffold, new_anchored, new_orphans)
+        yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, next_i, sets)
 #generate_scaffolds
 
 
@@ -413,14 +420,16 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
 
 
 def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
-                     anchored=set(), orphans=set(), recurse=False):
+                     anchored=frozenset(), orphans=frozenset(), prev_gap=""):
     # Timekeeping.
     if time.monotonic() > endtime:
         raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
         for scaffold, anchored2, orphans2 in scaffolds_here[end_pos]:
-            if (not recurse and not scaffold[0][3][3]) or not scaffold[-1][3][3]:
+            if prev_gap == scaffold[0][2]:
+                continue  # Scaffold must not start with unit equal to previous gap.
+            if (not prev_gap and not scaffold[0][3][3]) or not scaffold[-1][3][3]:
                 continue  # Can't start or end with a non-ref repeat unit.
             if orphans - anchored2 or orphans2 - anchored:
                 continue  # Would end up with orphans.
@@ -446,18 +455,20 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 continue  # Can't reach from next_pos to end_pos.
 
             for scaffold, anchored2, orphans2 in scaffold_list:
+                if prev_gap == scaffold[0][2]:
+                    continue  # Scaffold must not start with unit equal to previous gap.
                 if gapseq == scaffold[-1][2]:
-                    continue  # Gap cannot be equal to foregoing unit.
-                if not recurse and not scaffold[0][3][3]:
+                    continue  # Scaffold must not end with unit equal to the new gap.
+                if not prev_gap and not scaffold[0][3][3]:
                     continue  # Can't start with this non-ref repeat unit.
                 now_anchored = anchored | anchored2
                 now_orphaned = (orphans | orphans2) - now_anchored
-                if not now_orphaned - anchorable_after_gap:
-                    for substructure in recurse_gen_path(next_pos, end_pos,
-                            scaffolds, remaining_ranges, endtime,
-                            now_anchored, now_orphaned, True):
-                        if not gapseq == substructure[0][2]:
-                            yield scaffold + substructure
+                if now_orphaned - anchorable_after_gap:
+                    continue  # Can't anchor all our orphans at the other side of the gap.
+                for substructure in recurse_gen_path(next_pos, end_pos,
+                        scaffolds, remaining_ranges, endtime,
+                        now_anchored, now_orphaned, gapseq):
+                    yield scaffold + substructure
 #recurse_gen_path
 
 
@@ -602,6 +613,15 @@ def find_repeat_stretches(seq, units, allow_one, repeats=None):
         # NOTE: Hardcoded minimum length; singletons of 2nt or shorter are not included.
         regex = re.compile("(" + unit + "){" + str(3 if len(unit) == 1 else 2 if len(unit) == 2 or not allow_one else 1) + ",}")
 
+        # Ignore repeats that completely overlap a repeat of a longer unit.
+        # Using those is not expected to give a high score, but their
+        # presence may greatly increase calculation time.
+        # Due to the way this function is called, preferred repeats will not be ignored
+        # if they overlap with unpreferred repeats. This is the desired behaviour.
+        # Example markers where this filter has an effect: DYF387S1, PentaD, DYS448.
+        ignore_ranges = [(o_start, o_end) for o_start, o_end, o_unit in repeats
+                if len(unit) < len(o_unit)]  # Other is longer unit (will be 4+)
+
         pos = 0
         while True:
             match = regex.search(seq[pos:])
@@ -610,27 +630,25 @@ def find_repeat_stretches(seq, units, allow_one, repeats=None):
             match_start = pos + match.start()
             match_end = match_start + len(match.group(0))
             pos = match_end - len(unit) + 1
-
-            # Ignore repeats that completely overlap a repeat of a longer unit.
-            # Using those is not expected to give a high score, but their
-            # presence may greatly increase calculation time.
-            if not any(len(unit) < len(o_unit) and match_start >= o_start and match_end <= o_end
-                    for o_start, o_end, o_unit in repeats):
+            if not any(match_start >= o_start and match_end <= o_end for o_start, o_end in ignore_ranges):
                 repeats.append([match_start, match_end, unit])
 
     # Sort repeats.
     repeats.sort()
 
-    # Remove singletons that completely overlap a significant repeat stretch
+    # Remove singletons that completely overlap a 5+ repeat stretch
     # of a shorter unit that is embedded in the singleton. (Can only occur with singletons.)
-    # For example, remove singletons of 'ACTA' within a significant repeat stretch of 'ACT'.
+    # For example, remove singletons of 'ACTA' in a 5+ repeat stretch of 'ACT'.
+    significant_ranges = [(o_start, o_end, o_unit)
+        for o_start, o_end, o_unit in repeats
+        if (o_end - o_start) // len(o_unit) > MANY_TIMES]
     i = 0
     while i < len(repeats):
-        if (len(repeats[i][2]) == repeats[i][1] - repeats[i][0] and  # Current is singleton
-                any(len(o_unit) < len(repeats[i][2]) and  # Other is shorter unit
-                    repeats[i][0] >= o_start and repeats[i][1] <= o_end and  # Overlap
-                    (o_end - o_start) // len(o_unit) > MANY_TIMES  # Other is significant repeat
-                    for o_start, o_end, o_unit in repeats)):
+        start, end, unit = repeats[i]
+        if (len(unit) == end - start and  # Current is singleton
+                any(len(o_unit) < len(unit) and  # Other is shorter unit
+                    start >= o_start and end <= o_end  # Overlap
+                    for o_start, o_end, o_unit in significant_ranges)):
             # The current (singleton) unit overlaps completely with a significant repeat.
             del repeats[i]
         else:
@@ -713,19 +731,20 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
     for i in range(len(repeats)):
         for j in range(i + 1, len(repeats)):
             overlap_len = repeats[i][1] - repeats[j][0]
-            if overlap_len > 0:
-                # Stretch i extends past the start of stretch j.
-                # We can trim the end of stretch i, or the start of stretch j, to compensate.
-                if repeats[i][2] in preferred_units and repeats[j][2] in preferred_units and (TRIM_FOR_SINGLETONS or (repeats[i][1] - repeats[i][0] != len(repeats[i][2]) and repeats[j][1] - repeats[j][0] != len(repeats[j][2]))):
-                    # Always trimming if both repeats involve preferred units.
-                    repeat_trims[i][1].add(math.ceil(float(overlap_len)/len(repeats[i][2]))*len(repeats[i][2]))
-                    repeat_trims[j][0].add(math.ceil(float(overlap_len)/len(repeats[j][2]))*len(repeats[j][2]))
-                else:
-                    # Otherwise, only trimming if doing so leaves no gap.
-                    if overlap_len % len(repeats[i][2]) == 0:
-                        repeat_trims[i][1].add(overlap_len)
-                    if overlap_len % len(repeats[j][2]) == 0:
-                        repeat_trims[j][0].add(overlap_len)
+            if overlap_len <= 0:
+                break  # The repeats are sorted, so subsequent j will not overlap.
+            # Stretch i extends past the start of stretch j.
+            # We can trim the end of stretch i, or the start of stretch j, to compensate.
+            if repeats[i][2] in preferred_units and repeats[j][2] in preferred_units:
+                # Always trimming if both repeats involve preferred units.
+                repeat_trims[i][1].add(math.ceil(float(overlap_len)/len(repeats[i][2]))*len(repeats[i][2]))
+                repeat_trims[j][0].add(math.ceil(float(overlap_len)/len(repeats[j][2]))*len(repeats[j][2]))
+            else:
+                # Otherwise, only trimming if doing so leaves no gap.
+                if overlap_len % len(repeats[i][2]) == 0:
+                    repeat_trims[i][1].add(overlap_len)
+                if overlap_len % len(repeats[j][2]) == 0:
+                    repeat_trims[j][0].add(overlap_len)
     for i in range(len(repeat_trims)):
         start, end, unit = repeats[i]
         # Don't trim unpreferred units such that they violate min_repeat_length.
