@@ -278,7 +278,7 @@ def unique_set(all_sets, this_set):
 #unique_set
 
 
-def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphans=None, start=0, sets=None):
+def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, start=0, sets=None):
     if sets is None:
         sets = {}
     if scaffold is None:
@@ -287,11 +287,10 @@ def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphan
             # max_gap_len is equal to the unit length for non-preferred singletons, N/A otherwise.
             max_gap_len = unit_len if not repeat[3][3] and unit_len == repeat[1] - repeat[0] else 0
             new_scaffold = [repeat]
-            new_infos = repeat[3][:2]
             new_anchored = unique_set(sets, {repeat[2]} if repeat[3][2] else set())
             new_orphans = unique_set(sets, set() if repeat[3][2] else {repeat[2]})
-            yield (new_scaffold, new_infos, new_anchored, new_orphans, max_gap_len)
-            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i, sets)
+            yield (new_scaffold, new_anchored, new_orphans, max_gap_len)
+            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
         return
 
     scaffold_end_pos = scaffold[-1][1]
@@ -302,7 +301,6 @@ def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphan
         unit = repeat[2]
         if repeat[0] == scaffold_end_pos and unit != scaffold_end_unit:
             new_scaffold = scaffold + [repeat]
-            new_infos = max(infos, repeat[3][:2])
             new_anchored = anchored
             new_orphans = orphans
             if repeat[3][2]:
@@ -312,8 +310,8 @@ def generate_scaffolds(repeats, scaffold=None, infos=None, anchored=None, orphan
                         new_orphans = unique_set(sets, new_orphans - {unit})
             elif unit not in anchored and unit not in orphans:
                 new_orphans = unique_set(sets, new_orphans | {unit})
-            yield (new_scaffold, new_infos, new_anchored, new_orphans, 0)
-            yield from generate_scaffolds(repeats, new_scaffold, new_infos, new_anchored, new_orphans, i, sets)
+            yield (new_scaffold, new_anchored, new_orphans, 0)
+            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
 #generate_scaffolds
 
 
@@ -341,7 +339,7 @@ def get_gaps(repeats, scaffolds, seq):
         for end, _, unit2, _ in repeats:
             size = end - start
             if size <= 0 or (start in scaffolds and end in scaffolds[start]
-                    and any(not scaffold[3] for scaffold in scaffolds[start][end])):
+                    and any(not scaffold[2] for scaffold in scaffolds[start][end])):
                 continue  # Illegal gap: can be filled with scaffold without orphans.
             if size > NAMING_OPTIONS["max_long_gap"]:
                 continue  # Gap is too large.
@@ -383,7 +381,7 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
     # Lookup tables for starting positions and associated ending positions.
     # The positions are linked with the units that are anchorable along the way.
     start_end00 = {start:
-            {end: reduce(set.union, (scaffold[2] for scaffold in scaffolds_here))
+            {end: reduce(set.union, (scaffold[1] for scaffold in scaffolds_here))
             for end, scaffolds_here in ends.items()}
         for start, ends in scaffolds.items()}
     start_end10 = extend_ranges_with_gaps(start_end00, short_gaps)
@@ -423,13 +421,13 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
         raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
-        for scaffold, longest_stretch, anchored2, orphans2, max_gap_len in scaffolds_here[end_pos]:
+        for scaffold, anchored2, orphans2, max_gap_len in scaffolds_here[end_pos]:
             if (not prev_unit and not scaffold[0][3][3]) or not scaffold[-1][3][3]:
                 continue  # Can't start or end with a non-ref repeat unit.
             if orphans - anchored2 or orphans2 - anchored:
                 continue  # Would end up with orphans.
             if not max_gap_len or max_gap_len >= prev_gap_len or scaffold[-1][2] == prev_unit:
-                yield (scaffold, longest_stretch)
+                yield scaffold
     except KeyError:
         pass  # No scaffolds reach exactly from start_pos to end_pos.
 
@@ -451,7 +449,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
             except KeyError:
                 continue  # Can't reach from next_pos to end_pos.
 
-            for scaffold, longest_stretch2, anchored2, orphans2, max_gap_len in scaffold_list:
+            for scaffold, anchored2, orphans2, max_gap_len in scaffold_list:
                 last_unit = scaffold[-1][2]
                 if gapseq == last_unit:
                     continue  # Gap cannot be equal to foregoing unit.
@@ -462,18 +460,17 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 now_anchored = anchored | anchored2
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if not now_orphaned - anchorable_after_gap:
-                    for substructure, longest_stretch1 in recurse_gen_path(next_pos, end_pos,
+                    for substructure in recurse_gen_path(next_pos, end_pos,
                             scaffolds, remaining_ranges, endtime,
                             now_anchored, now_orphaned, gap_len, last_unit):
                         if not gapseq == substructure[0][2]:
-                            yield (scaffold + substructure, max(longest_stretch1, longest_stretch2))
+                            yield scaffold + substructure
 #recurse_gen_path
 
 
 def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
     # Most validity rules are efficiently implemented in recurse_gen_path.
-    for result in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime):
-        path, (longest_stretch, block_length) = result
+    for path in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime):
 
         # The path is invalid if it has only singletons of a non-preferred unit.
         repeated_units = set()
@@ -485,7 +482,7 @@ def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
                 else:
                     singletons.add(unit)
         if not singletons - repeated_units:
-            yield result
+            yield path
 #gen_valid_paths
 
 
@@ -591,7 +588,7 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_lengt
     best_path = []
     endtime = time.monotonic() + (MAX_SECONDS_REFSEQ if is_refseq else MAX_SECONDS)
 
-    for path, _ in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+    for path in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         block_length = ref_block_length or find_block_length(path, len_or_int=len)
 
         # Calculate the score of the current path.
