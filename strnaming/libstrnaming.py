@@ -284,12 +284,10 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
     if scaffold is None:
         for i, repeat in enumerate(itertools.islice(repeats, start, None), start):
             unit_len = len(repeat[2])
-            # max_gap_len is equal to the unit length for non-preferred singletons, N/A otherwise.
-            max_gap_len = unit_len if not repeat[3][3] and unit_len == repeat[1] - repeat[0] else 0
             new_scaffold = [repeat]
             new_anchored = unique_set(sets, {repeat[2]} if repeat[3][2] else set())
             new_orphans = unique_set(sets, set() if repeat[3][2] else {repeat[2]})
-            yield (new_scaffold, new_anchored, new_orphans, max_gap_len)
+            yield (new_scaffold, new_anchored, new_orphans)
             yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
         return
 
@@ -310,7 +308,7 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
                         new_orphans = unique_set(sets, new_orphans - {unit})
             elif unit not in anchored and unit not in orphans:
                 new_orphans = unique_set(sets, new_orphans | {unit})
-            yield (new_scaffold, new_anchored, new_orphans, 0)
+            yield (new_scaffold, new_anchored, new_orphans)
             yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, i, sets)
 #generate_scaffolds
 
@@ -415,19 +413,18 @@ def get_ranges(scaffolds, short_gaps, all_gaps, is_refseq):
 
 
 def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
-                     anchored=set(), orphans=set(), prev_gap_len=-1, prev_unit=""):
+                     anchored=set(), orphans=set(), recurse=False):
     # Timekeeping.
     if time.monotonic() > endtime:
         raise OutOfTimeException()
     scaffolds_here = scaffolds[start_pos]
     try:
-        for scaffold, anchored2, orphans2, max_gap_len in scaffolds_here[end_pos]:
-            if (not prev_unit and not scaffold[0][3][3]) or not scaffold[-1][3][3]:
+        for scaffold, anchored2, orphans2 in scaffolds_here[end_pos]:
+            if (not recurse and not scaffold[0][3][3]) or not scaffold[-1][3][3]:
                 continue  # Can't start or end with a non-ref repeat unit.
             if orphans - anchored2 or orphans2 - anchored:
                 continue  # Would end up with orphans.
-            if not max_gap_len or max_gap_len >= prev_gap_len or scaffold[-1][2] == prev_unit:
-                yield scaffold
+            yield scaffold
     except KeyError:
         pass  # No scaffolds reach exactly from start_pos to end_pos.
 
@@ -441,7 +438,6 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
         # Choose the next gap and continue the structure on the other side.
         for next_pos, gapseq in gaps[gap_pos].items():
             gap_len = next_pos - gap_pos
-            min_singleton_len = gap_len if prev_gap_len == -1 or gap_len < prev_gap_len else prev_gap_len
             remaining_ranges = ranges[2 if gap_len <= NAMING_OPTIONS["max_gap"] else 3]
 
             try:
@@ -449,41 +445,20 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
             except KeyError:
                 continue  # Can't reach from next_pos to end_pos.
 
-            for scaffold, anchored2, orphans2, max_gap_len in scaffold_list:
-                last_unit = scaffold[-1][2]
-                if gapseq == last_unit:
+            for scaffold, anchored2, orphans2 in scaffold_list:
+                if gapseq == scaffold[-1][2]:
                     continue  # Gap cannot be equal to foregoing unit.
-                if not prev_unit and not scaffold[0][3][3]:
+                if not recurse and not scaffold[0][3][3]:
                     continue  # Can't start with this non-ref repeat unit.
-                if max_gap_len and max_gap_len < min_singleton_len and not last_unit == prev_unit:
-                    continue  # This singleton would get too isolated.
                 now_anchored = anchored | anchored2
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if not now_orphaned - anchorable_after_gap:
                     for substructure in recurse_gen_path(next_pos, end_pos,
                             scaffolds, remaining_ranges, endtime,
-                            now_anchored, now_orphaned, gap_len, last_unit):
+                            now_anchored, now_orphaned, True):
                         if not gapseq == substructure[0][2]:
                             yield scaffold + substructure
 #recurse_gen_path
-
-
-def gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime):
-    # Most validity rules are efficiently implemented in recurse_gen_path.
-    for path in recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime):
-
-        # The path is invalid if it has only singletons of a non-preferred unit.
-        repeated_units = set()
-        singletons = set()
-        for start, end, unit, (repeat_length, unit_length, anchor, preferred) in path:
-            if is_refseq or not preferred:
-                if repeat_length > unit_length:
-                    repeated_units.add(unit)
-                else:
-                    singletons.add(unit)
-        if not singletons - repeated_units:
-            yield path
-#gen_valid_paths
 
 
 def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
@@ -520,7 +495,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 
         # First, try to reach exactly from prefix to suffix.
         if has_prefix and has_suffix and pos_suffix in ranges[0][len_prefix]:
-            for result in gen_valid_paths(len_prefix, pos_suffix, scaffolds, ranges, is_refseq, endtime):
+            for result in recurse_gen_path(len_prefix, pos_suffix, scaffolds, ranges, endtime):
                 success = True
                 yield result
             if success:
@@ -532,7 +507,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         # or finishing at the start of suffix separately.
         if has_prefix:
             for end_pos in end_positions & ranges[0][len_prefix].keys():
-                for result in gen_valid_paths(len_prefix, end_pos, scaffolds, ranges, is_refseq, endtime):
+                for result in recurse_gen_path(len_prefix, end_pos, scaffolds, ranges, endtime):
                     success = True
                     yield result
             if not success:
@@ -541,7 +516,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
         if has_suffix:
             for start_pos in start_positions:
                 if pos_suffix in ranges[0][start_pos]:
-                    for result in gen_valid_paths(start_pos, pos_suffix, scaffolds, ranges, is_refseq, endtime):
+                    for result in recurse_gen_path(start_pos, pos_suffix, scaffolds, ranges, endtime):
                         success = True
                         yield result
             if not success:
@@ -551,7 +526,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
             # No path with anchored prefix OR suffix found; try everything else.
             for start_pos in start_positions:
                 for end_pos in end_positions & ranges[0][start_pos].keys():
-                    yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, is_refseq, endtime)
+                    yield from recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime)
 
     else:
         # Refseq structures must include a significant repeat of at least 8 nt.
@@ -574,7 +549,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
                 minimal_end_pos_table[significant_repeat[0]])
             for end_pos in end_positions & ranges[0][start_pos].keys():
                 if end_pos >= minimal_end_pos:
-                    yield from gen_valid_paths(start_pos, end_pos, scaffolds, ranges, True, endtime)
+                    yield from recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime)
 #gen_all_paths
 
 
