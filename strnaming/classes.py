@@ -401,7 +401,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             last_structure_end = structure[-1][1]
 
             # Determine the block_length of the full reference structure.
-            block_length = libstrnaming.find_block_length(structure),
+            block_length = libstrnaming.find_block_length(structure)
 
             # Find unique repeat units.
             units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
