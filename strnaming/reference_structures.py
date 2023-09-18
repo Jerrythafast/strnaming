@@ -37,21 +37,59 @@ REFFILENAME = "reference-structures-{chromosome}.bin.gz"
 # Long:  111u uurr  rrrr rrrr  (u=unit length 0..6; r=repeat length 1..1024)
 
 
-def _txt2bin(instream):
-    """Included for reference."""
+def _parse_structures_with_separation(instream, min_separation):
+    """
+    Parse and yield structures from instream, requiring at least
+    min_separation nucleotides between any two structures.
+    Print (to stdout) the lines containing structures that are
+    too close to each other.
+    The input must be sorted.
+    """
+    prev = None
+    for line in instream:
+        line = line.strip("\r\n")
+        chr, *structure = line.split("\t")
+        structure = list(structure)
+        for i in range(0, len(structure), 3):
+            structure[i] = int(structure[i])
+            structure[i+1] = int(structure[i+1])
+        too_close = False
+        if prev:
+            prev_chr, prev_structure, prev_line, prev_too_close = prev
+            sep = min_separation if prev_chr != chr else structure[0] - prev_structure[-2]
+            if sep < 0:
+                raise ValueError(
+                    "Bad structure order: Chr%s, %i-%i, %i-%i" %
+                    (chr, prev_structure[0], prev_structure[-2], structure[0], structure[-2]))
+            if sep < min_separation:
+                # Too close to previous structure!
+                if not prev_too_close:
+                    print(prev_line)
+                print(line)
+                too_close = True
+            elif not prev_too_close:
+                # We can safely output the previous structure now.
+                yield prev_chr, prev_structure
+        prev = (chr, structure, line, too_close)
+    if prev and not prev[-1]:
+        # Last structure was not too close, output it!
+        yield prev[0], prev[1]
+
+
+def _txt2bin(structures):
+    """
+    Read structures from the given iterable and write them to the
+    built-in reference structure data files.
+    The input must be sorted.
+    """
     outfiles = {}
     last_end = {}
-    for line in instream:
-        chr, *structure = line.strip("\r\n").split("\t")
+    for chr, structure in structures:
         if chr not in outfiles:
             filename = REFFILENAME.format(chromosome=chr)
             reffile = BUILTINDIR / filename
             outfiles[chr] = gzip.open(str(reffile), "xb")
             last_end[chr] = 0
-        structure = list(structure)
-        for i in range(0, len(structure), 3):
-            structure[i] = int(structure[i])
-            structure[i+1] = int(structure[i+1])
         start, *_, end, _ = structure
         if start < last_end[chr]:
             raise ValueError(
@@ -104,8 +142,7 @@ def _txt2bin(instream):
 
 class Reader:
     def __init__(self, chromosome):
-        self.filename = REFFILENAME.format(chromosome=chromosome)
-        self.reffile = BUILTINDIR / self.filename
+        self.reffile = BUILTINDIR / REFFILENAME.format(chromosome=chromosome)
 
     def __enter__(self):
         self.s_start = self.s_end = self.num_bytes = None
@@ -192,3 +229,16 @@ def gen_within_ranges(chromosome, ranges):
         for start, end in ranges:
             reader.skip_to(start)
             yield from reader.gen_until(end)
+
+
+if __name__ == "__main__":
+    import sys
+    if sys.argv[1] == "txt2bin":
+        with open(sys.argv[2], "rt") as instream:
+            _txt2bin(_parse_structures_with_separation(instream, 30))
+    elif sys.argv[1] == "bin2txt":
+        with Reader(sys.argv[2]) as reader:
+            for structure in reader.gen_until(sys.maxsize):
+                print("%s\t%s" % (sys.argv[2], "\t".join(
+                    "%i\t%i\t%s" % (stretch[0], stretch[1], "N" * stretch[2])
+                    for stretch in structure)))
