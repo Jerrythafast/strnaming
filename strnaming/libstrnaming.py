@@ -212,8 +212,9 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
     # Count interruptions of the most common unit length.
     nice_interruptions = sum(1 for x in interruptions if x == block_length)
     large_gap_delta = len_large_gap - max(interruptions, default=0) if len_large_gap else 0
-    #if not len_large_gap and interruptions and max(interruptions) > 8:
-    #    # TODO: investigate effect: Introducing a large gap while the refseq had none counts as an additional gap.
+    #if not len_large_gap and max(interruptions, default=0) > 8:
+    #    # Idea for future version: Introducing a large gap while the refseq had none counts as an additional gap.
+    #    # This greatly reduces (>90%) the number of reference structures with large gaps.
     #    raise ValueError("Did not want to introduce this yet")
     #    interruptions.append(0)
 

@@ -75,6 +75,17 @@ def _parse_structures_with_separation(instream, min_separation):
         # Last structure was not too close, output it!
         yield prev[0], prev[1]
 
+def _filter_large_gaps(structures):
+    """
+    Yield structures that don't contain a large interruption.
+    Print (to stdout) the structures that have one.
+    """
+    from .libstrnaming import find_overlong_gap
+    for chr, structure in structures:
+        if find_overlong_gap(list(zip(*[iter(structure)]*3))) is not None:
+            print("%s\t%s" % (chr, "\t".join(map(str, structure))))
+        else:
+            yield chr, structure
 
 def _txt2bin(structures):
     """
@@ -235,7 +246,7 @@ if __name__ == "__main__":
     import sys
     if sys.argv[1] == "txt2bin":
         with open(sys.argv[2], "rt") as instream:
-            _txt2bin(_parse_structures_with_separation(instream, 30))
+            _txt2bin(_filter_large_gaps(_parse_structures_with_separation(instream, 20)))
     elif sys.argv[1] == "bin2txt":
         with Reader(sys.argv[2]) as reader:
             for structure in reader.gen_until(sys.maxsize):
