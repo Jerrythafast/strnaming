@@ -19,6 +19,7 @@ STRNaming Changelog
     structure does not need to be repeated 4 times anymore.
   * Fixed a bug causing refseq analysis to not consider all possible
     start/stop combinations where significant repeats overlap.
+* Updated reference sequence download URL to use HTTPS.
 
 ### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
