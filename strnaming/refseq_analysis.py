@@ -18,11 +18,14 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
+import itertools
 import re
+import sys
 
 from .libstrnaming import MANY_TIMES, NAMING_OPTIONS, ComplexityException, OutOfTimeException, \
                           get_best_path, find_block_length, find_everything, find_overlong_gap, \
                           find_repeat_stretches, trim_overlapping_repeats
+from .refseq_cache import get_refseq
 
 #import numpy as np  # Only imported when actually running this code.
 
@@ -39,8 +42,8 @@ def detect_repeats_np(seq):
     The value at position (j,i) gives the length of a repeat of units of
     length j (in number of units), ending in position i in the sequence.
     """
-    sa = np.fromiter(map(ord, seq), count=len(seq), dtype=np.uint8)
-    matrix = np.empty((NAMING_OPTIONS["max_unit_length"], len(seq)), dtype=np.int64)
+    sa = np.fromiter(map(ord, seq), count=len(seq), dtype=np.int32)
+    matrix = np.empty((NAMING_OPTIONS["max_unit_length"], len(seq)), dtype=np.int32)
     for j in range(NAMING_OPTIONS["max_unit_length"]):
         # Inspired by https://stackoverflow.com/a/42129610
         jp1 = j + 1
@@ -95,7 +98,7 @@ def grow_significant_repeats(matrix, locations, start, end, max_distance=20):
         # Found at least one significant repeat that starts within max_distance nt of current end.
         # Adjust end position to the end of that stretch.
         end += significant_end_positions[-1] + 1  # +1 to convert from inclusive to exclusive position.
-    return int(start), int(end)  # Convert from np.int64 to native Python int
+    return int(start), int(end)  # Convert from np.int32 to native Python int
 #grow_significant_repeats
 
 
@@ -149,6 +152,9 @@ def grow_scope(seq, matrix, locations, start, end):
 
 
 def collapse_repeat_units_refseq(seq, *, offset=0):
+    """
+    Return the optimal score and repeat structure containing the longest repeat in seq.
+    """
     if len(seq) < NAMING_OPTIONS["min_structure_length"]:
         return 0, []
 
@@ -166,7 +172,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
 
     # Find all stretches of at least 8 nt.
     # Implementation: Find any elements in matrix where matrix[j, i] >= 8/(j+1).
-    locations = np.zeros(len(seq), dtype=np.int64)
+    locations = np.zeros(len(seq), dtype=np.int32)
     for j in range(6):
         u_len = j + 1
         repeated_locations = np.logical_not(locations) & (matrix[j,:] >= NAMING_OPTIONS["min_repeat_length"] / u_len)
@@ -261,6 +267,12 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
 
 
 def wrap_collapse_repeat_units_refseq(seq, *, offset=0):
+    """
+    Like collapse_repeat_units_refseq, but return a 2-tuple (structure, exception)
+    instead. If OscillationException, OutOfTimeException or ComplexityException was
+    raised, return (None, exception). Else, return (structure, None).
+    If no repeat structure was found, (None, None) is returned.
+    """
     try:
         score, path = collapse_repeat_units_refseq(seq, offset=offset)
     except OscillationException as ex:
@@ -276,14 +288,26 @@ def wrap_collapse_repeat_units_refseq(seq, *, offset=0):
 #wrap_collapse_repeat_units_refseq
 
 
-def recurse_collapse_repeat_units_refseq(seq, *, offset=0, status_callback=None):
+def recurse_collapse_repeat_units_refseq(seq, *, offset=0, status_callback=None, generate=True):
+    """
+    Repeatedly call wrap_collapse_repeat_units_refseq to identify all repeat structures in
+    the given sequence.
+
+    If provided, the status_callback function is called with four arguments
+    (start, exclusive_end, structure, exception) to communicate results on sub-ranges.
+    Subsequent calls do not necessarily describe the results in a particular order.
+
+    If generate=True (the default), this function will yield (as a generator) the
+    identified repeat structures.
+    """
     ranges = [(seq, offset)]
     while ranges:
         sub_seq, start = ranges.pop()
         structure, exception = wrap_collapse_repeat_units_refseq(sub_seq, offset=start)
         end = start + len(sub_seq)
         if structure:
-            yield structure
+            if generate:
+                yield structure
 
             # Maybe we can make structures before this one.
             range_before = structure[0][0] - start
@@ -300,3 +324,115 @@ def recurse_collapse_repeat_units_refseq(seq, *, offset=0, status_callback=None)
         if status_callback is not None:
             status_callback(start, end, structure, exception)
 #recurse_collapse_repeat_units_refseq
+
+
+def get_scopes_from_seq(seq):
+    """Return a sorted list of unique, possibly-overlapping scopes on seq."""
+    # Build an overview of all 4+ repeat locations of 8+ nt.
+    import numpy as np
+    matrix = detect_repeats_np(seq)
+    locations_4r_8nt = np.zeros(len(seq), dtype=np.int32)
+    locations_8nt = np.zeros(len(seq), dtype=np.int32)
+    for j in range(6):
+        u_len = j + 1
+        row = matrix[j,:]
+        repeated_locations = np.logical_not(locations_4r_8nt) & (row >= max(8 / u_len, 4))
+        locations_4r_8nt[repeated_locations] = u_len
+        repeated_locations = np.logical_not(locations_8nt) & (row >= 8 / u_len)
+        locations_8nt[repeated_locations] = u_len
+
+    # locations_4r_8nt[i] now contains the u_len of a repeat ending at position i (inclusive!), if that repeat is 8+ nt and at least 4 repeats, else 0.
+    # locations_8nt[i] now contains the u_len of a repeat ending at position i (inclusive!), if that repeat is 8+ nt, else 0.
+
+    # Iterate over *ALL* 4+ repeats of 8+ nt to collect all unique scopes.
+    scopes = set()
+    for end in np.flatnonzero(locations_4r_8nt):
+        ulen = locations_4r_8nt[end]
+        start = end + 1 - matrix[ulen - 1, end] * ulen
+        start, end, units = grow_scope(seq, matrix, locations_8nt, start, end + 1)
+        if end - start >= NAMING_OPTIONS["min_structure_length"]:
+            scopes.add((int(start), int(end)))
+    return sorted(scopes)
+#get_scopes_from_seq
+
+
+def find_scopes(seq, offset):
+    """Yield unique, non-overlapping scopes on seq, counting from the given offset."""
+    scopes = get_scopes_from_seq(seq)
+    if not scopes:
+        return
+
+    # Merge overlapping scopes while generating.
+    start, end = scopes[0]
+    for next_start, next_end in itertools.islice(scopes, 1, None):
+        if next_start >= end:
+            yield start + offset, end + offset
+            start = next_start
+            end = next_end
+        elif next_end > end:
+            end = next_end
+    yield start + offset, end + offset
+#find_scopes
+
+
+def analyse_range(threads, chr, start, end, status_callback):
+    """
+    Analyse the given range of genomic sequence.
+    The end position is exlusive.
+
+    The provided status_callback function is called with four
+    arguments (start, exclusive_end, structure, exception) to
+    communicate results on sub-ranges. This function is called,
+    possibly concurrently, from within subprocesses.
+    """
+    from concurrent.futures import ProcessPoolExecutor
+    with ProcessPoolExecutor(threads) as pool:
+        seq = get_refseq(chr, start, end - 1)
+        pos = start
+        for scope_start, scope_end in find_scopes(seq, start):
+            if scope_start > pos:
+                status_callback(pos, scope_start, None, None)
+            pool.submit(recurse_collapse_repeat_units_refseq,
+                seq[scope_start-start:scope_end-start],
+                offset=scope_start, status_callback=status_callback, generate=False)
+            if scope_end < end:
+                status_callback(scope_end, end, None, None)
+            pos = scope_end
+#analyse_range
+
+
+def print_callback(chr, start, end, structure, exception):
+    """Print structures to stdout and other statuses to stderr."""
+    if structure:
+        print("%s\t%s" % (chr, "\t".join(str(x) for x in structure for x in x)))
+        sys.stdout.flush()
+    else:
+        status = "DEFINITE"
+        exception_type = type(exception)
+        elif exception_type is OscillationException:
+            status = "FAILOSCI"
+        elif exception_type is OutOfTimeException
+            status = "FAILTIME"
+        elif exception_type is ComplexityException
+            status = "FAILSIZE"
+        sys.stderr.write("%s chr%s:%i..%i\n" % (status, chr, start, end - 1))
+        sys.stderr.flush()
+#print_callback
+
+
+if __name__ == "__main__":
+    import argparse
+    import functools
+    import libstrnaming
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--chr", required=True)
+    parser.add_argument("--start", type=int, required=True)
+    parser.add_argument("--end", type=int, required=True)
+    parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--maxtime", type=int, default=300)
+    args = parser.parse_args()
+    libstrnaming.MAX_SECONDS = args.maxtime
+    libstrnaming.MAX_SECONDS_REFSEQ = args.maxtime
+    chr = args.chr.upper().lstrip("CHR")
+    callback = functools.partial(print_callback, chr)
+    analyse_range(args.threads, chr, args.start, args.end, callback)
