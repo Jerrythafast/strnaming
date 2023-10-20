@@ -409,11 +409,11 @@ def print_callback(chr, start, end, structure, exception):
     else:
         status = "DEFINITE"
         exception_type = type(exception)
-        elif exception_type is OscillationException:
+        if exception_type is OscillationException:
             status = "FAILOSCI"
-        elif exception_type is OutOfTimeException
+        elif exception_type is OutOfTimeException:
             status = "FAILTIME"
-        elif exception_type is ComplexityException
+        elif exception_type is ComplexityException:
             status = "FAILSIZE"
         sys.stderr.write("%s chr%s:%i..%i\n" % (status, chr, start, end - 1))
         sys.stderr.flush()
