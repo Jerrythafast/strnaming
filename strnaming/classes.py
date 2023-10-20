@@ -419,8 +419,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 if stretch_start > regex_pos:
                     regex_blocks.append(
                         "%s" % refseq_store.get_refseq(chromosome, regex_pos, stretch_start))
-                regex_blocks.append("((%s)+)" % refseq_store.get_refseq(
-                    chromosome, stretch_start, stretch_start + unit_length))
+                regex_blocks.append("((%s){%i,})" % (refseq_store.get_refseq(
+                        chromosome, stretch_start, stretch_start + unit_length),
+                        3 if unit_length == 1 else 2 if unit_length == 2 else 1))
                 regex_pos = stretch_end
             if regex_pos < end:
                 regex_blocks.append("%s" % refseq_store.get_refseq(chromosome, regex_pos, end))

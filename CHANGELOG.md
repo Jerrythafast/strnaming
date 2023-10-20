@@ -7,6 +7,9 @@ STRNaming Changelog
   longer ignored (e.g., allow A[4] in the place of AAAAG[1]).
 * Singletons are now ignored if they completely overlap any 8nt+ repeat of
   a preferred unit.
+* The pattern used by ReportedRange.get_stretches() will no longer create
+  repeat structures with stretches shorter than 3 nt, making it consistent
+  with the rules applied by the full STRNaming algorithm.
 * Updated initial reference sequence analysis algorithm:
   * Initial reference sequence analysis now starts by setting a well-defined
     scope around the longest repeat in the provided sequence and will now
@@ -23,7 +26,7 @@ STRNaming Changelog
 
 ### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
-* ReportedRange.get_stretches() now attempts a quick regex match against the
+* ReportedRange.get_stretches() now attempts a quick pattern match against the
   reference structure prior to calling collapse_repeat_units().
 * Added capability to load reference structures from many locations on one
   chromosome in a single pass.
