@@ -55,6 +55,8 @@ NAMING_OPTIONS = {
 
 class OutOfTimeException(Exception):
     pass
+
+
 class ComplexityException(Exception):
     pass
 
