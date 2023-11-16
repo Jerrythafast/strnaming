@@ -241,7 +241,7 @@ def calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path, bl
 #calc_path_score
 
 
-def unique_set(all_sets, this_set):
+def unique_set(all_sets, this_set: frozenset):
     """
     Memory-saving helper function. Return an equivalent set from all_sets
     for this_set, or add this_set to all_sets and return this_set.
