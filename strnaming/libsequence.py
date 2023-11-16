@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2023 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -19,7 +19,8 @@
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import re, sys
+import re
+import sys
 
 # Patterns that match blocks of TSSV-style sequences and allele names.
 PAT_TSSV_BLOCK = re.compile("([ACGT]+)\((\d+)\)")
@@ -239,7 +240,6 @@ def align_affine(template, sequence, *, match_score=1, mismatch_score=-3, gap_op
                 # Top left corner.
                 matrix_direction[i] = A_MATCH
             continue
-
 
         match = match_score if template[x - 1] == sequence[y - 1] else mismatch_score
 

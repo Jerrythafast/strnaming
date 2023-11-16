@@ -18,7 +18,8 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
-import re, sys
+import re
+import sys
 
 from . import length_adjustments, libsequence, libstrnaming, refseq_analysis, refseq_cache, reference_structures, html
 # TODO: Proper argument/input checking for all classes/methods!
@@ -542,7 +543,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             else:
                 try:
                     path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
-                        part["prefix"], suffix, part["units"], part["block_length"], part["overlong_gap"])
+                        part["prefix"], suffix, part["units"], part["block_length"], len(part["overlong_gap"]))
                 except libstrnaming.OutOfTimeException:
                     # TODO: Add range name to this message (and possibly others).
                     sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"

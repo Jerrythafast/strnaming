@@ -18,7 +18,11 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
-import itertools, math, re, sys, time
+import itertools
+import math
+import re
+import sys
+import time
 
 from functools import reduce
 
@@ -28,8 +32,8 @@ from .libsequence import align
 MAX_SECONDS = 30
 MAX_SECONDS_REFSEQ = 300
 
-# Number of times a repeat must be repeated to make a 'significant' repeat stretch.
-MANY_TIMES = 4
+# Number of times a repeat must be repeated to make a significant enough repeat stretch for refseq analysis to kick in.
+REFSEQ_MINIMUM_REPEATS = 4
 
 # STRNaming settings.
 # TODO: Split these up into separate globals.
@@ -179,7 +183,7 @@ def powersum(multiplier, count):
 #powersum
 
 
-def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_length, preferred_units=None,
+def calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path, block_length, preferred_units=None,
                     is_refseq=False):
     """Calculate the score of the given path.  The higher the better."""
     if preferred_units is None:
@@ -197,7 +201,7 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
     # Measure things about the path.
     pos = 0
     for start, end, unit, (repeat_length, unit_length, anchor, preferred) in path:
-        repeat_count = repeat_length // unit_length  # Note: a -1 here would avoid counting singletons as a repeat and generally favour fewer stretches
+        repeat_count = repeat_length // unit_length
         bases_covered += repeat_length
         repeats += repeat_count
         if preferred:
@@ -213,8 +217,8 @@ def calc_path_score(len_prefix, len_suffix, len_seq, len_large_gap, path, block_
 
     # Count interruptions of the most common unit length.
     nice_interruptions = sum(1 for x in interruptions if x == block_length)
-    large_gap_delta = len_large_gap - max(interruptions, default=0) if len_large_gap else 0
-    #if not len_large_gap and max(interruptions, default=0) > 8:
+    large_gap_delta = ref_len_large_gap - max(interruptions, default=0) if ref_len_large_gap else 0
+    #if not ref_len_large_gap and max(interruptions, default=0) > 8:
     #    # Idea for future version: Introducing a large gap while the refseq had none counts as an additional gap.
     #    # This greatly reduces (>90%) the number of reference structures with large gaps.
     #    raise ValueError("Did not want to introduce this yet")
@@ -247,30 +251,30 @@ def unique_set(all_sets, this_set):
 #unique_set
 
 
-def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, start=0, sets=None):
+def generate_scaffolds(repeat_list, scaffold=None, anchored=None, orphans=None, start=0, sets=None):
     if sets is None:
         sets = {}
     if scaffold is None:
         empty_set = unique_set(sets, frozenset())
-        for next_i, repeat in enumerate(itertools.islice(repeats, start, None), start + 1):
+        for next_i, repeat in enumerate(itertools.islice(repeat_list, start, None), start + 1):
             unit_set = unique_set(sets, frozenset({repeat[2]}))
             anchor = repeat[3][2]
             new_scaffold = [repeat]
             new_anchored = unit_set if anchor else empty_set
             new_orphans = empty_set if anchor else unit_set
             yield (new_scaffold, new_anchored, new_orphans)
-            yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, next_i, sets)
+            yield from generate_scaffolds(repeat_list, new_scaffold, new_anchored, new_orphans, next_i, sets)
         return
 
     scaffold_end_pos = scaffold[-1][1]
     scaffold_end_unit = scaffold[-1][2]
     units_limit_reached = len(anchored | orphans) >= 6
-    for next_i, repeat in enumerate(itertools.islice(repeats, start, None), start + 1):
+    for next_i, repeat in enumerate(itertools.islice(repeat_list, start, None), start + 1):
         repeat_start_pos = repeat[0]
         if repeat_start_pos < scaffold_end_pos:
             continue
         if repeat_start_pos > scaffold_end_pos:
-            break  # The repeats are sorted, so we're done here.
+            break  # The repeat_list is sorted, so we're done here.
 
         unit = repeat[2]
         if unit == scaffold_end_unit:
@@ -294,15 +298,15 @@ def generate_scaffolds(repeats, scaffold=None, anchored=None, orphans=None, star
         elif not unit_is_anchored and not unit_is_orphan:
             new_orphans = unique_set(sets, new_orphans | {unit})
         yield (new_scaffold, new_anchored, new_orphans)
-        yield from generate_scaffolds(repeats, new_scaffold, new_anchored, new_orphans, next_i, sets)
+        yield from generate_scaffolds(repeat_list, new_scaffold, new_anchored, new_orphans, next_i, sets)
 #generate_scaffolds
 
 
-def get_scaffolds(repeats):
+def get_scaffolds(repeat_list):
     scaffolds = {}
-    for n, scaffold in enumerate(generate_scaffolds(repeats)):
+    for n, scaffold in enumerate(generate_scaffolds(repeat_list)):
         if n == 5000000:
-            raise ComplexityException("%r" % repeats)  # More than 5 million scaffolds?!
+            raise ComplexityException("%r" % repeat_list)  # More than 5 million scaffolds?!
         start = scaffold[0][0][0]
         end = scaffold[0][-1][1]
         if start not in scaffolds:
@@ -315,11 +319,11 @@ def get_scaffolds(repeats):
 #get_scaffolds
 
 
-def get_gaps(repeats, scaffolds, seq):
+def get_gaps(repeat_list, scaffolds, seq):
     short_gaps = {}
     all_gaps = {}
-    for _, start, unit1, _ in repeats:
-        for end, _, unit2, _ in repeats:
+    for _, start, unit1, _ in repeat_list:
+        for end, _, unit2, _ in repeat_list:
             size = end - start
             if size <= 0 or (start in scaffolds and end in scaffolds[start]
                     and any(not scaffold[2] for scaffold in scaffolds[start][end])):
@@ -497,7 +501,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
 #recurse_gen_path
 
 
-def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+def gen_all_paths(prefix, suffix, seq, repeat_list, is_refseq, endtime):
     if not is_refseq:
         # Filter out repeat stretches that fall completely in the prefix or suffix.
         if seq.startswith(prefix):
@@ -506,22 +510,22 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
             zero, len_prefix, score = align(seq, prefix, prefix=True)
             len_prefix = len_prefix if score > 0 else None
         if len_prefix:
-            repeats = [repeat for repeat in repeats if repeat[1] > len_prefix]
+            repeat_list = [repeat for repeat in repeat_list if repeat[1] > len_prefix]
         if seq.endswith(suffix):
             pos_suffix = len(seq) - len(suffix)
         else:
             zero, len_suffix, score = align(seq[-1::-1], suffix[-1::-1], prefix=True)
             pos_suffix = len(seq) - len_suffix if score > 0 else None
         if pos_suffix:
-            repeats = [repeat for repeat in repeats if repeat[0] < pos_suffix]
+            repeat_list = [repeat for repeat in repeat_list if repeat[0] < pos_suffix]
 
-    scaffolds = get_scaffolds(repeats)
-    short_gaps, all_gaps = get_gaps(repeats, scaffolds, seq)
+    scaffolds = get_scaffolds(repeat_list)
+    short_gaps, all_gaps = get_gaps(repeat_list, scaffolds, seq)
     ranges = get_ranges(scaffolds, short_gaps, all_gaps, is_refseq)
 
     # A *preferred* repeat unit is required as the starter/finisher.
-    start_positions = set(x[0] for x in repeats if x[3][3])
-    end_positions = set(x[1] for x in repeats if x[3][3])
+    start_positions = set(x[0] for x in repeat_list if x[3][3])
+    end_positions = set(x[1] for x in repeat_list if x[3][3])
 
     if not is_refseq:
         # Try anchoring the prefix and suffix.
@@ -568,7 +572,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 
     else:
         # Refseq structures must include a significant repeat of at least 8 nt.
-        significant_repeats = [r for r in repeats if r[3][0] >= max(NAMING_OPTIONS["min_repeat_length"], r[3][1] * MANY_TIMES)]
+        significant_repeats = [r for r in repeat_list if r[3][0] >= max(NAMING_OPTIONS["min_repeat_length"], r[3][1] * REFSEQ_MINIMUM_REPEATS)]
         minimal_end_pos_table = {}
         minimal_end_pos = len(seq)
         for repeat in reversed(significant_repeats):
@@ -591,7 +595,7 @@ def gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
 #gen_all_paths
 
 
-def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, ref_len_large_gap, offset=0):
+def get_best_path(prefix, suffix, seq, repeat_list, preferred_units, ref_block_length, ref_len_large_gap, offset=0):
     """Return combination of repeats that maximises calc_path_score."""
     len_prefix = len(prefix) if prefix is not None else -1
     len_suffix = len(suffix) if suffix is not None else -1
@@ -601,7 +605,7 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_lengt
     best_path = []
     endtime = time.monotonic() + (MAX_SECONDS_REFSEQ if is_refseq else MAX_SECONDS)
 
-    for path in gen_all_paths(prefix, suffix, seq, repeats, is_refseq, endtime):
+    for path in gen_all_paths(prefix, suffix, seq, repeat_list, is_refseq, endtime):
         block_length = ref_block_length or find_block_length(path, len_or_int=len)
 
         # Calculate the score of the current path.
@@ -628,11 +632,11 @@ def get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_lengt
 #get_best_path
 
 
-def find_repeat_stretches(seq, units, allow_one, preferred_units, repeats=None):
+def find_repeat_stretches(seq, units, allow_one, preferred_units, repeat_list=None):
     """Return a list of repeat stretches. The input units must be sorted by decreasing length."""
     # Find all stretches of each repeated unit.
-    if repeats is None:
-        repeats = []
+    if repeat_list is None:
+        repeat_list = []
     for unit in units:
 
         # Compile a list of all places where this unit is found.
@@ -646,7 +650,7 @@ def find_repeat_stretches(seq, units, allow_one, preferred_units, repeats=None):
         # Due to the way this function is called, preferred repeats will not be ignored
         # if they overlap with unpreferred repeats. This is the desired behaviour.
         # Example markers where this filter has an effect: DYF387S1, PentaD, DYS448.
-        ignore_ranges = [(o_start, o_end) for o_start, o_end, o_unit in repeats
+        ignore_ranges = [(o_start, o_end) for o_start, o_end, o_unit in repeat_list
             if len(unit) < len(o_unit)  # Other is longer unit (will be 4+)
             and o_end - o_start >= 8]  # Other is repeated
 
@@ -659,55 +663,55 @@ def find_repeat_stretches(seq, units, allow_one, preferred_units, repeats=None):
             match_end = match_start + len(match.group(0))
             pos = match_end - len(unit) + 1
             if not any(match_start >= o_start and match_end <= o_end for o_start, o_end in ignore_ranges):
-                repeats.append([match_start, match_end, unit])
+                repeat_list.append([match_start, match_end, unit])
 
     # Sort repeats.
-    repeats.sort()
+    repeat_list.sort()
 
     # Remove singletons that completely overlap an 8nt+ repeat of a preferred unit.
     significant_ranges = [(o_start, o_end)
-        for o_start, o_end, o_unit in repeats
+        for o_start, o_end, o_unit in repeat_list
         if o_unit in preferred_units
         and o_end - o_start >= 8]
     i = 0
-    while i < len(repeats):
-        start, end, unit = repeats[i]
+    while i < len(repeat_list):
+        start, end, unit = repeat_list[i]
         if (len(unit) == end - start and  # Current is singleton
                 any(start >= o_start and end <= o_end  # Overlap
                     for o_start, o_end in significant_ranges)):
             # The current (singleton) unit overlaps completely with a significant repeat.
-            del repeats[i]
+            del repeat_list[i]
         else:
             i += 1
 
-    return repeats
+    return repeat_list
 #find_repeat_stretches
 
 
-def trim_overlapping_repeats(repeats, preferred_units):
+def trim_overlapping_repeats(repeat_list, preferred_units):
     """
     Where repeat stretches overlap, also include trimmed copies that don't overlap.
     """
-    repeat_trims = tuple(({0}, {0}) for x in range(len(repeats)))
-    for i in range(len(repeats)):
-        for j in range(i + 1, len(repeats)):
-            overlap_len = repeats[i][1] - repeats[j][0]
+    repeat_trims = tuple(({0}, {0}) for x in range(len(repeat_list)))
+    for i in range(len(repeat_list)):
+        for j in range(i + 1, len(repeat_list)):
+            overlap_len = repeat_list[i][1] - repeat_list[j][0]
             if overlap_len <= 0:
                 break  # The repeats are sorted, so subsequent j will not overlap.
             # Stretch i extends past the start of stretch j.
             # We can trim the end of stretch i, or the start of stretch j, to compensate.
-            if repeats[i][2] in preferred_units and repeats[j][2] in preferred_units:
+            if repeat_list[i][2] in preferred_units and repeat_list[j][2] in preferred_units:
                 # Always trimming if both repeats involve preferred units.
-                repeat_trims[i][1].add(math.ceil(float(overlap_len)/len(repeats[i][2]))*len(repeats[i][2]))
-                repeat_trims[j][0].add(math.ceil(float(overlap_len)/len(repeats[j][2]))*len(repeats[j][2]))
+                repeat_trims[i][1].add(math.ceil(float(overlap_len)/len(repeat_list[i][2]))*len(repeat_list[i][2]))
+                repeat_trims[j][0].add(math.ceil(float(overlap_len)/len(repeat_list[j][2]))*len(repeat_list[j][2]))
             else:
                 # Otherwise, only trimming if doing so leaves no gap.
-                if overlap_len % len(repeats[i][2]) == 0:
+                if overlap_len % len(repeat_list[i][2]) == 0:
                     repeat_trims[i][1].add(overlap_len)
-                if overlap_len % len(repeats[j][2]) == 0:
+                if overlap_len % len(repeat_list[j][2]) == 0:
                     repeat_trims[j][0].add(overlap_len)
     for i in range(len(repeat_trims)):
-        start, end, unit = repeats[i]
+        start, end, unit = repeat_list[i]
         # Don't trim unpreferred units such that they violate min_repeat_length.
         # For ref units, a lower threshold of 3 nt is applied.
         # NOTE: hardcoded number.
@@ -716,14 +720,14 @@ def trim_overlapping_repeats(repeats, preferred_units):
             for trim_end in repeat_trims[i][1]:
                 trim_length = trim_start + trim_end
                 if trim_length and end - start - trim_length >= min_length:
-                    repeats.append([start + trim_start, end - trim_end, unit])
-    repeats.sort()
+                    repeat_list.append([start + trim_start, end - trim_end, unit])
+    repeat_list.sort()
 
     # Deduplicate repeats.
     i = 1
-    while i < len(repeats):
-        if tuple(repeats[i-1]) == tuple(repeats[i]):
-            del repeats[i]
+    while i < len(repeat_list):
+        if tuple(repeat_list[i-1]) == tuple(repeat_list[i]):
+            del repeat_list[i]
         else:
             i += 1
 #trim_overlapping_repeats
@@ -740,8 +744,8 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
 
     # Find stretches of the preferred units first,
     # then find more units outside those stretches.
-    repeats = find_repeat_stretches(seq, preferred_units, True, preferred_units)
-    for i, (start, end, preferred_unit) in enumerate(repeats):
+    repeat_list = find_repeat_stretches(seq, preferred_units, True, preferred_units)
+    for i, (start, end, preferred_unit) in enumerate(repeat_list):
         if start:
             # Find units before repeat i.
             locations = find_repeated_units(seq[:start])
@@ -761,7 +765,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
                     unit_locations[unit] = new_locations
         if i:
             # Find units between repeat i-1 and repeat i.
-            prev_end = repeats[i-1][1]
+            prev_end = repeat_list[i-1][1]
             if prev_end < start:
                 locations = find_repeated_units(seq[prev_end : start])
                 for unit in locations:
@@ -772,7 +776,7 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
                         unit_locations[unit] = new_locations
 
     # If no stretches of preferred units were found, just find any stretches.
-    if not repeats:
+    if not repeat_list:
         locations = find_repeated_units(seq)
         for unit in locations:
             try:
@@ -795,27 +799,27 @@ def find_everything(seq, unit_locations):  # FIXME, awful name.
     find_repeat_stretches(
         seq,
         [unit for unit in units if unit not in preferred_units],
-        False, preferred_units, repeats)
+        False, preferred_units, repeat_list)
 
     # Where repeat stretches overlap, also include trimmed copies that don't overlap.
-    trim_overlapping_repeats(repeats, preferred_units)
+    trim_overlapping_repeats(repeat_list, preferred_units)
 
     # Add (repeat_length, unit_length, anchor, preferred) to the end.
-    for repeat in repeats:
+    for repeat in repeat_list:
         start, end, unit = repeat
         anchor = any(start < start_l + length and end > start_l
             for start_l, length in unit_locations[unit])
         repeat.append((end - start, len(unit), anchor, unit in preferred_units))
 
     # Return what we have found.
-    return repeats
+    return repeat_list
 #find_everything
 
 
 ### Entry point for target analysis ###
 
 
-def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length, overlong_gap):
+def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length, ref_len_large_gap):
     """
     Combine repeat units in the given sequence.
     """
@@ -829,10 +833,10 @@ def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length
 
     # Find all stretches of any unit that stands out.
     unit_locations = {preferred_unit: [(0, len(seq))] for preferred_unit in preferred_units}
-    repeats = find_everything(seq, unit_locations)
+    repeat_list = find_everything(seq, unit_locations)
 
     # Find best combination of repeat unit usage.
-    score, path = get_best_path(prefix, suffix, seq, repeats, preferred_units, ref_block_length, len(overlong_gap))
+    score, path = get_best_path(prefix, suffix, seq, repeat_list, preferred_units, ref_block_length, ref_len_large_gap)
     return path
 #collapse_repeat_units
 
@@ -923,7 +927,7 @@ gen_all_paths
     * Else, yield all paths that start at prefix or end at suffix
     * If none of that is possible, just yield all possible paths
   * For refseq:
-    * Yield only paths that span a stretch of MANY_TIMES=4 repeats and 8nt or longer
+    * Yield only paths that span a stretch of REFSEQ_MINIMUM_REPEATS=4 repeats and 8nt or longer
     * Yield only paths that are at least min_structure_length=20 nt
 
 recurse_gen_path

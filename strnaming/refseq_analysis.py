@@ -22,7 +22,8 @@ import itertools
 import re
 import sys
 
-from .libstrnaming import MANY_TIMES, NAMING_OPTIONS, ComplexityException, OutOfTimeException, \
+from .libstrnaming import REFSEQ_MINIMUM_REPEATS, NAMING_OPTIONS, \
+                          ComplexityException, OutOfTimeException, \
                           get_best_path, find_block_length, find_everything, find_overlong_gap, \
                           find_repeat_stretches, trim_overlapping_repeats
 from .refseq_cache import get_refseq
@@ -167,7 +168,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     start, end, u_len = find_longest_repeat_np(matrix)
 
     # If the longest repeat is not significant (8+ nt and 4+ repeats), stop.
-    if end - start < max(NAMING_OPTIONS["min_repeat_length"], u_len * MANY_TIMES):
+    if end - start < max(NAMING_OPTIONS["min_repeat_length"], u_len * REFSEQ_MINIMUM_REPEATS):
         return 0, []
 
     # Find all stretches of at least 8 nt.
@@ -191,14 +192,14 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     # NOTE: We will not get longer-unit singletons overlapping a 4+ repeat, e.g., ACTA[1]'s within ACT[4+].
     # NOTE: In strnaming-1.1.4 we also wouldn't get repeats that completely overlap a longer unit, e.g., A[3] within AAAG[x] or AGAA[2+].
     # That latter filter has been changed to apply only if there is overlap with a 4+ repeat, e.g., AAAG[4+] or AGAA[4+].
-    repeats = find_repeat_stretches(range_seq, sorted(units, key=len, reverse=True), True, units)
+    repeat_list = find_repeat_stretches(range_seq, sorted(units, key=len, reverse=True), True, units)
 
     # TODO: Now maybe we can do a possible performance trick:
     # Drop all repeats that can't be reached from a significant repeat (8+ nt and 4+ repeats) with at most 5 gaps of at most 8 nt.
     # Subsequently also drop all repeats that can't be anchored anymore. Loop to drop more.
 
     # Perform repeat stretch trimming such that partially overlapping repeats can be combined (maintain minimum 3+ nt).
-    trim_overlapping_repeats(repeats, units)
+    trim_overlapping_repeats(repeat_list, units)
 
     # Add (repeat_length, unit_length, anchor, preferred) to the end of all repeats.
     # We will set preferred=True on everything and anchor=True if repeat length >= 8.
@@ -206,7 +207,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     # but requires that there is at least one repeat of length >= 8 for each unit used.
     # We will consider all possible locations of all units that have at least one
     # stretch of 8+ nt.
-    for repeat in repeats:
+    for repeat in repeat_list:
         repeat_start, repeat_end, repeat_unit = repeat
         repeat_length = repeat_end - repeat_start
         repeat.append((repeat_length, len(repeat_unit), repeat_length >= 8, True))
@@ -221,7 +222,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     previous_path = None
     while True:
         # Short-circuit if we can't collapse anything.
-        if not repeats:
+        if not repeat_list:
             return 0, []
 
         if not previous_path:
@@ -238,7 +239,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
             large_gap_length = large_gap[1] - large_gap[0] if large_gap else 0
 
         # Find the best combination of repeat unit usage.
-        score, path = get_best_path(prefix, suffix, range_seq, repeats, units, block_length, large_gap_length, offset=offset)
+        score, path = get_best_path(prefix, suffix, range_seq, repeat_list, units, block_length, large_gap_length, offset=offset)
 
         if path and previous_path != path:
             this_path = json.dumps(path)
@@ -260,7 +261,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
             # Singletons in the path are not counted as used units.
             # This is doing 'real' allele naming, not applying specific refseq rules.
             units = set(unit for s, e, unit in path if e - s > len(unit))
-            repeats = find_everything(range_seq, {unit: [(0, len(range_seq))] for unit in units})
+            repeat_list = find_everything(range_seq, {unit: [(0, len(range_seq))] for unit in units})
         else:
             return score, path
 #collapse_repeat_units_refseq
