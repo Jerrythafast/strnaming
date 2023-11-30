@@ -79,6 +79,13 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
+### Version 1.2.0 (TBD)
+Naming of some loci has been updated as a result of bug fixes and improvements
+to the algorithm. Most notably, reference sequence analysis has been redesigned
+in such a way that it is no longer affected by the range of reference sequence
+analysed at once.
+* Updated CE allele numbering of D6S474 (-1 unit).
+
 ### Version 1.1.4 (7 February 2023)
 * Repeat stretches that fall completely in the prefix or suffix are now ignored.
 * Sequences that follow the same repeat pattern as the reference sequence are
