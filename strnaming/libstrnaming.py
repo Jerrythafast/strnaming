@@ -290,7 +290,7 @@ def generate_scaffolds(repeat_list, scaffold=None, anchored=None, orphans=None, 
         new_scaffold = scaffold + [repeat]
         new_anchored = anchored
         new_orphans = orphans
-        if repeat[3][2]:
+        if repeat[3][2]:  # Anchoring repeat.
             if not unit_is_anchored:
                 new_anchored = unique_set(sets, new_anchored | {unit})
                 if unit_is_orphan:
@@ -572,6 +572,7 @@ def gen_all_paths(prefix, suffix, seq, repeat_list, is_refseq, endtime):
 
     else:
         # Refseq structures must include a significant repeat of at least 8 nt.
+        # On the line below, r[3][0] is the repeat_length and r[3][1] is the unit_length.
         significant_repeats = [r for r in repeat_list if r[3][0] >= max(NAMING_OPTIONS["min_repeat_length"], r[3][1] * REFSEQ_MINIMUM_REPEATS)]
         minimal_end_pos_table = {}
         minimal_end_pos = len(seq)
