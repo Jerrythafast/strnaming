@@ -243,11 +243,26 @@ def gen_within_ranges(chromosome, ranges):
 
 
 if __name__ == "__main__":
+    # This is a hidden CLI to update package contents prior to release.
     import sys
     if sys.argv[1] == "txt2bin":
+        """
+        In this mode, the output of refseq_analysis is imported into the
+        STRNaming package data. The package data folder must be empty
+        and writable. Input must be sorted.
+        Input structures that are too close to gether (less than 20 nt)
+        or that contain a large gap (longer than 8 nt) will be rejected;
+        those will be printed to stdout.
+        """
         with open(sys.argv[2], "rt") as instream:
             _txt2bin(_filter_large_gaps(_parse_structures_with_separation(instream, 20)))
     elif sys.argv[1] == "bin2txt":
+        """
+        In this mode, reference structures stored in the STRNaming
+        package data are dumped to stdout. The output will contain 'N'
+        bases instead of actual repeat units, as those are not stored.
+        The output format is otherwise identical to refseq_analysis.
+        """
         with Reader(sys.argv[2]) as reader:
             for structure in reader.gen_until(sys.maxsize):
                 print("%s\t%s" % (sys.argv[2], "\t".join(

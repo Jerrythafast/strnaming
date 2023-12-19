@@ -422,6 +422,30 @@ def print_callback(chr, start, end, structure, exception):
 
 
 if __name__ == "__main__":
+    """
+    This is a hidden CLI to analyse a portion of GRCh38 reference.
+    For usage on large sections of the genome, the get_refseq function
+    MUST first be monkey-patched to avoid downloading the reference
+    sequence in tiny 5kb segments!
+
+    Found structures are printed to stdout, while ranges where no
+    structures could be found are printed to stderr. Each line in
+    stderr starts with an eight-character indication, one of:
+      DEFINITE  No significant repetitive elements found.
+      FAILOSCI  Failed to decide on the correct reference structure.
+      FAILTIME  Failed to analyse within the time limit set.
+      FAILSIZE  Failed analysis due to excessive number of permutations.
+    Increasing the respective limit may resolve FAILTIME or FAILSIZE.
+    FAILSOCI cannot currently be resolved without manual intervention.
+
+    It should be noted that performing refseq analysis on a randomly-
+    chosen range may produce inconsistent results. I.e., slight changes
+    to the chosen start/end position could change the resulting output.
+    Therefore, refseq analysis should initially be run on complete
+    ungapped chromosome segments (i.e., all bases between two N bases in
+    the GRCh38 reference). Subsequently, it is permissible to run it
+    again on short ranges that previously outputted a FAILXXXX log line.
+    """
     import argparse
     import functools
     import libstrnaming
