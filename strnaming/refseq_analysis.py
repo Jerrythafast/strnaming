@@ -22,7 +22,7 @@ import itertools
 import re
 import sys
 
-from .libstrnaming import REFSEQ_MINIMUM_REPEATS, NAMING_OPTIONS, \
+from .libstrnaming import REFSEQ_MINIMUM_REPEATS, MAX_UNIT_LENGTH, MIN_REPEAT_LENGTH, MIN_STRUCTURE_LENGTH, \
                           ComplexityException, OutOfTimeException, \
                           get_best_path, find_block_length, find_everything, find_overlong_gap, \
                           find_repeat_stretches, trim_overlapping_repeats
@@ -39,13 +39,13 @@ class OscillationException(Exception):
 
 def detect_repeats_np(seq):
     """
-    Return a matrix of max_unit_length x len(seq) elements.
+    Return a matrix of MAX_UNIT_LENGTH x len(seq) elements.
     The value at position (j,i) gives the length of a repeat of units of
     length j (in number of units), ending in position i in the sequence.
     """
     sa = np.fromiter(map(ord, seq), count=len(seq), dtype=np.int32)
-    matrix = np.empty((NAMING_OPTIONS["max_unit_length"], len(seq)), dtype=np.int32)
-    for j in range(NAMING_OPTIONS["max_unit_length"]):
+    matrix = np.empty((MAX_UNIT_LENGTH, len(seq)), dtype=np.int32)
+    for j in range(MAX_UNIT_LENGTH):
         # Inspired by https://stackoverflow.com/a/42129610
         jp1 = j + 1
         a_ext = np.concatenate(([0], [0]*jp1, sa[:-jp1] == sa[jp1:], [0]))
@@ -65,7 +65,7 @@ def find_longest_repeat_np(matrix):
     the sequence (lowest indices into matrix).
     """
     max_repeats = matrix.max(1)
-    max_lengths = np.where(max_repeats == 1, 0, max_repeats * np.arange(1, 7))
+    max_lengths = np.where(max_repeats == 1, 0, max_repeats * np.arange(1, MAX_UNIT_LENGTH + 1))
     max_unit = max_lengths.argmax()
     max_len = max_lengths[max_unit]
     max_end = matrix[max_unit,:].argmax() + 1
@@ -156,7 +156,7 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     """
     Return the optimal score and repeat structure containing the longest repeat in seq.
     """
-    if len(seq) < NAMING_OPTIONS["min_structure_length"]:
+    if len(seq) < MIN_STRUCTURE_LENGTH:
         return 0, []
 
     # Import numpy now.
@@ -168,15 +168,15 @@ def collapse_repeat_units_refseq(seq, *, offset=0):
     start, end, u_len = find_longest_repeat_np(matrix)
 
     # If the longest repeat is not significant (8+ nt and 4+ repeats), stop.
-    if end - start < max(NAMING_OPTIONS["min_repeat_length"], u_len * REFSEQ_MINIMUM_REPEATS):
+    if end - start < max(MIN_REPEAT_LENGTH, u_len * REFSEQ_MINIMUM_REPEATS):
         return 0, []
 
     # Find all stretches of at least 8 nt.
     # Implementation: Find any elements in matrix where matrix[j, i] >= 8/(j+1).
     locations = np.zeros(len(seq), dtype=np.int32)
-    for j in range(6):
+    for j in range(MAX_UNIT_LENGTH):
         u_len = j + 1
-        repeated_locations = np.logical_not(locations) & (matrix[j,:] >= NAMING_OPTIONS["min_repeat_length"] / u_len)
+        repeated_locations = np.logical_not(locations) & (matrix[j,:] >= MIN_REPEAT_LENGTH / u_len)
         locations[repeated_locations] = u_len
 
     # locations[i] now contains the u_len of a repeat ending at position i (inclusive!), if that repeat is 8+ nt, else 0.
@@ -282,7 +282,7 @@ def wrap_collapse_repeat_units_refseq(seq, *, offset=0):
         return None, ex
     except ComplexityException as ex:
         return None, ex
-    if not path or path[-1][1] - path[0][0] < NAMING_OPTIONS["min_structure_length"]:
+    if not path or path[-1][1] - path[0][0] < MIN_STRUCTURE_LENGTH:
         return None, None
     else:
         return path, None
@@ -312,13 +312,13 @@ def recurse_collapse_repeat_units_refseq(seq, *, offset=0, status_callback=None,
 
             # Maybe we can make structures before this one.
             range_before = structure[0][0] - start
-            if range_before >= NAMING_OPTIONS["min_structure_length"]:
+            if range_before >= MIN_STRUCTURE_LENGTH:
                 sub_seq = seq[start-offset : structure[0][0]-offset]
                 ranges.append((sub_seq, start))
 
             # Maybe we can make structures after this one.
             range_after = end - structure[-1][1]
-            if range_after >= NAMING_OPTIONS["min_structure_length"]:
+            if range_after >= MIN_STRUCTURE_LENGTH:
                 sub_seq = seq[structure[-1][1]-offset : end-offset]
                 ranges.append((sub_seq, structure[-1][1]))
 
@@ -334,7 +334,7 @@ def get_scopes_from_seq(seq):
     matrix = detect_repeats_np(seq)
     locations_4r_8nt = np.zeros(len(seq), dtype=np.int32)
     locations_8nt = np.zeros(len(seq), dtype=np.int32)
-    for j in range(6):
+    for j in range(MAX_UNIT_LENGTH):
         u_len = j + 1
         row = matrix[j,:]
         repeated_locations = np.logical_not(locations_4r_8nt) & (row >= max(8 / u_len, 4))
@@ -351,7 +351,7 @@ def get_scopes_from_seq(seq):
         ulen = locations_4r_8nt[end]
         start = end + 1 - matrix[ulen - 1, end] * ulen
         start, end, units = grow_scope(seq, matrix, locations_8nt, start, end + 1)
-        if end - start >= NAMING_OPTIONS["min_structure_length"]:
+        if end - start >= MIN_STRUCTURE_LENGTH:
             scopes.add((int(start), int(end)))
     return sorted(scopes)
 #get_scopes_from_seq

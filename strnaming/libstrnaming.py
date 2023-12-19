@@ -32,29 +32,29 @@ from .libsequence import align
 MAX_SECONDS = 30
 MAX_SECONDS_REFSEQ = 300
 
+# Maximum number of scaffolds that generate_scaffolds() may generate.
+MAX_SCAFFOLDS = 5000000
+
 # Number of times a repeat must be repeated to make a significant enough repeat stretch for refseq analysis to kick in.
 REFSEQ_MINIMUM_REPEATS = 4
 
-# STRNaming settings.
-# TODO: Split these up into separate globals.
-# TODO: Put alignment settings here?
-NAMING_OPTIONS = {
-    "min_repeat_length": 8,
-    "min_structure_length": 20,
-    "max_unit_length": 6,
-    "max_gap": 8,
-    "max_long_gap": 20,
-    "bases_covered_factor": 0.38033472,
-    "units_used_factor": -8.8979406,
-    "units_used_multiplier": 1.28993249,
-    "repeats_factor": 2.12807513,
-    "preferred_repeats_factor": 1.62639518,
-    "interruptions_factor": -10.61080182,
-    "interruptions_multiplier": 1.09212922,
-    "nice_interruptions_factor": 7.23604507,
-    "interruption_bases_factor": -0.46646098,
-    "prefix_suffix_factor": -1.37392421
-}
+# Minimum number of nucleotides in a repeat structure.
+MIN_STRUCTURE_LENGTH = 20
+
+# Minimum number of nucleotides in a repeat stretch.
+MIN_REPEAT_LENGTH = 8
+
+# Maximum number of nucleotides in a repeat unit. (NOTE: Logic will break in many places if this is set to 8 or higher.)
+MAX_UNIT_LENGTH = 6
+
+# Maximum number of different repeat units to use in a structure.
+MAX_UNITS_IN_STRUCTURE = 6
+
+# Maximum number of nucleotides in a regular gap.
+MAX_GAP_LENGTH = 8
+
+# Maximum number of nucleotides in a large gap. Structures can have at most one large gap.
+MAX_LARGE_GAP_LENGTH = 20
 
 
 class OutOfTimeException(Exception):
@@ -67,13 +67,13 @@ class ComplexityException(Exception):
 
 def detect_repeats(seq):
     """
-    Return a matrix of max_unit_length x len(seq) elements.
+    Return a matrix of MAX_UNIT_LENGTH x len(seq) elements.
     The value at position (j,i) gives the length of a repeat of units of
     length j (in number of units), ending in position i in the sequence.
     """
     len_seq = len(seq)
-    matrix = [[0]*len_seq for j in range(NAMING_OPTIONS["max_unit_length"])]
-    for j in range(NAMING_OPTIONS["max_unit_length"]):
+    matrix = [[0]*len_seq for j in range(MAX_UNIT_LENGTH)]
+    for j in range(MAX_UNIT_LENGTH):
         row = matrix[j]
         for i in range(len_seq):
             if i <= j:
@@ -82,7 +82,7 @@ def detect_repeats(seq):
                 row[i] = j + 1  # Restart counting.
             else:
                 row[i] = row[i - 1] + 1
-    for j in range(NAMING_OPTIONS["max_unit_length"]):
+    for j in range(MAX_UNIT_LENGTH):
         row = matrix[j]
         for i in range(len_seq):
             row[i] //= (j + 1)
@@ -114,7 +114,7 @@ def recurse_find_longest_repeat(seq, matrix=None):
 
     # Degenerate case: no repeat found.  Short-circuit.
     length = end - start
-    if length < NAMING_OPTIONS["min_repeat_length"]:
+    if length < MIN_REPEAT_LENGTH:
         yield (len(seq), len(seq))
         return
 
@@ -157,8 +157,8 @@ def find_block_length(path, len_or_int=int):
 
 
 def find_overlong_gap(path):
-    """Return the longest interruption, if that interruption is longer than max_gap."""
-    longest_gap = NAMING_OPTIONS["max_gap"]
+    """Return the longest interruption, if that interruption is longer than MAX_GAP_LENGTH."""
+    longest_gap = MAX_GAP_LENGTH
     longest_start_pos = 0
     for i in range(1, len(path)):
         start_pos = path[i - 1][1]
@@ -226,17 +226,15 @@ def calc_path_score(len_prefix, len_suffix, len_seq, ref_len_large_gap, path, bl
 
     # Calculate score.
     return sum((
-        bases_covered * NAMING_OPTIONS["bases_covered_factor"],
-        powersum(NAMING_OPTIONS["units_used_multiplier"], len(units_used)) *
-            NAMING_OPTIONS["units_used_factor"],
-        repeats * NAMING_OPTIONS["repeats_factor"],
-        preferred_repeats * NAMING_OPTIONS["preferred_repeats_factor"],
-        powersum(NAMING_OPTIONS["interruptions_multiplier"], len(interruptions)) *
-            NAMING_OPTIONS["interruptions_factor"],
-        nice_interruptions * NAMING_OPTIONS["nice_interruptions_factor"],
-        sum(interruptions) * NAMING_OPTIONS["interruption_bases_factor"],
-        0 if is_refseq else (abs(prefix_delta) + abs(suffix_delta) + abs(large_gap_delta)) *
-            NAMING_OPTIONS["prefix_suffix_factor"]
+          0.38033472 * bases_covered,
+         -8.89794060 * powersum(1.28993249, len(units_used)),
+          2.12807513 * repeats,
+          1.62639518 * preferred_repeats,
+        -10.61080182 * powersum(1.09212922, len(interruptions)),
+          7.23604507 * nice_interruptions,
+         -0.46646098 * sum(interruptions),
+          0 if is_refseq else
+         -1.37392421 * (abs(prefix_delta) + abs(suffix_delta) + abs(large_gap_delta))
     ))
 #calc_path_score
 
@@ -268,7 +266,7 @@ def generate_scaffolds(repeat_list, scaffold=None, anchored=None, orphans=None, 
 
     scaffold_end_pos = scaffold[-1][1]
     scaffold_end_unit = scaffold[-1][2]
-    units_limit_reached = len(anchored | orphans) >= 6
+    units_limit_reached = len(anchored | orphans) >= MAX_UNITS_IN_STRUCTURE
     for next_i, repeat in enumerate(itertools.islice(repeat_list, start, None), start + 1):
         repeat_start_pos = repeat[0]
         if repeat_start_pos < scaffold_end_pos:
@@ -304,9 +302,8 @@ def generate_scaffolds(repeat_list, scaffold=None, anchored=None, orphans=None, 
 
 def get_scaffolds(repeat_list):
     scaffolds = {}
-    for n, scaffold in enumerate(generate_scaffolds(repeat_list)):
-        if n == 5000000:
-            raise ComplexityException("%r" % repeat_list)  # More than 5 million scaffolds?!
+    generator = generate_scaffolds(repeat_list)
+    for scaffold in itertools.islice(generator, MAX_SCAFFOLDS):
         start = scaffold[0][0][0]
         end = scaffold[0][-1][1]
         if start not in scaffolds:
@@ -315,6 +312,8 @@ def get_scaffolds(repeat_list):
             scaffolds[start][end] = [scaffold]
         else:
             scaffolds[start][end].append(scaffold)
+    if next(generator, None) is not None:
+        raise ComplexityException("%r" % repeat_list)
     return scaffolds
 #get_scaffolds
 
@@ -328,7 +327,7 @@ def get_gaps(repeat_list, scaffolds, seq):
             if size <= 0 or (start in scaffolds and end in scaffolds[start]
                     and any(not scaffold[2] for scaffold in scaffolds[start][end])):
                 continue  # Illegal gap: can be filled with scaffold without orphans.
-            if size > NAMING_OPTIONS["max_long_gap"]:
+            if size > MAX_LARGE_GAP_LENGTH:
                 continue  # Gap is too large.
             gapseq = seq[start : end]
             if size == len(unit1) and gapseq == unit1:
@@ -339,7 +338,7 @@ def get_gaps(repeat_list, scaffolds, seq):
                 all_gaps[start][end] = gapseq
             except KeyError:
                 all_gaps[start] = {end: gapseq}
-            if size <= NAMING_OPTIONS["max_gap"]:
+            if size <= MAX_GAP_LENGTH:
                 try:
                     short_gaps[start][end] = gapseq
                 except KeyError:
@@ -356,7 +355,7 @@ def extend_with_gaps(extended, gap_ranges, ranges_before, ranges_after):
                 for gap_end in gap_ranges[gap_start]:
                     for final_end, (more_anchorables, more_orphans) in ranges_after[gap_end].items():
                         must_use_units = orphans | more_orphans
-                        if len(must_use_units) > 6:
+                        if len(must_use_units) > MAX_UNITS_IN_STRUCTURE:
                             # This combination of before-range and after-range is not valid,
                             # because it uses too many different units. Note that this filter is
                             # not perfect, as we only know the number of must-orphan units.
@@ -444,7 +443,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 continue  # Can't start or end with a non-ref repeat unit.
             if orphans - anchored2 or orphans2 - anchored:
                 continue  # Would end up with orphans.
-            if len(units_so_far | anchored2 | orphans2) > 6:
+            if len(units_so_far | anchored2 | orphans2) > MAX_UNITS_IN_STRUCTURE:
                 continue  # Would end up with too many different units.
             yield scaffold
     except KeyError:
@@ -465,7 +464,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
         # Choose the next gap and continue the structure on the other side.
         for next_pos, gapseq in gaps[gap_pos].items():
             gap_len = next_pos - gap_pos
-            remaining_ranges = ranges[2 if gap_len <= NAMING_OPTIONS["max_gap"] else 3]
+            remaining_ranges = ranges[2 if gap_len <= MAX_GAP_LENGTH else 3]
 
             try:
                 anchorable_after_gap, orphaned_after_gap = remaining_ranges[0][next_pos][end_pos]
@@ -476,7 +475,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 continue  # Using this gap implies we will end up with orphans.
 
             # The following check is meant to improve performance, but it might take more time than it saves.
-            #if len(anchored | orphaned_before | orphaned_after_gap) > 6:
+            #if len(anchored | orphaned_before | orphaned_after_gap) > MAX_UNITS_IN_STRUCTURE:
             #    continue  # Using this gap implies we will be using too many different units.
 
             for scaffold, anchored2, orphans2 in scaffold_list:
@@ -492,7 +491,7 @@ def recurse_gen_path(start_pos, end_pos, scaffolds, ranges, endtime,
                 now_orphaned = (orphans | orphans2) - now_anchored
                 if now_orphaned - anchorable_after_gap:
                     continue  # Can't anchor all our orphans at the other side of the gap.
-                if len(now_anchored | now_orphaned) > 6:
+                if len(now_anchored | now_orphaned) > MAX_UNITS_IN_STRUCTURE:
                     continue  # Would end up with too many different units.
                 for substructure in recurse_gen_path(next_pos, end_pos,
                         scaffolds, remaining_ranges, endtime,
@@ -573,7 +572,7 @@ def gen_all_paths(prefix, suffix, seq, repeat_list, is_refseq, endtime):
     else:
         # Refseq structures must include a significant repeat of at least 8 nt.
         # On the line below, r[3][0] is the repeat_length and r[3][1] is the unit_length.
-        significant_repeats = [r for r in repeat_list if r[3][0] >= max(NAMING_OPTIONS["min_repeat_length"], r[3][1] * REFSEQ_MINIMUM_REPEATS)]
+        significant_repeats = [r for r in repeat_list if r[3][0] >= max(MIN_REPEAT_LENGTH, r[3][1] * REFSEQ_MINIMUM_REPEATS)]
         minimal_end_pos_table = {}
         minimal_end_pos = len(seq)
         for repeat in reversed(significant_repeats):
@@ -588,7 +587,7 @@ def gen_all_paths(prefix, suffix, seq, repeat_list, is_refseq, endtime):
                 # Start position comes after start of last significant repeat.
                 return
             minimal_end_pos = max(
-                start_pos + NAMING_OPTIONS["min_structure_length"],
+                start_pos + MIN_STRUCTURE_LENGTH,
                 minimal_end_pos_table[significant_repeat[0]])
             for end_pos in end_positions & ranges[0][start_pos].keys():
                 if end_pos >= minimal_end_pos and not ranges[0][start_pos][end_pos][1]:
@@ -713,10 +712,10 @@ def trim_overlapping_repeats(repeat_list, preferred_units):
                     repeat_trims[j][0].add(overlap_len)
     for i in range(len(repeat_trims)):
         start, end, unit = repeat_list[i]
-        # Don't trim unpreferred units such that they violate min_repeat_length.
+        # Don't trim unpreferred units such that they violate MIN_REPEAT_LENGTH.
         # For ref units, a lower threshold of 3 nt is applied.
         # NOTE: hardcoded number.
-        min_length = 3 if unit in preferred_units else NAMING_OPTIONS["min_repeat_length"]
+        min_length = 3 if unit in preferred_units else MIN_REPEAT_LENGTH
         for trim_start in repeat_trims[i][0]:
             for trim_end in repeat_trims[i][1]:
                 trim_length = trim_start + trim_end
@@ -844,7 +843,7 @@ def collapse_repeat_units(seq, prefix, suffix, preferred_units, ref_block_length
 
 """
 Differences Naming after Refseq:
-* Can start to introduce one gap of more than 8 nt (up to 20 nt) without inflicting the prefix_suffix_factor penalty
+* Can start to introduce one gap of more than 8 nt (up to 20 nt) without inflicting the large_gap_delta penalty
 * Block length no longer varies per path, so nice gap points may change for previously-not-optimal paths
 * Preferred-unit repeats < 8 nt become anchoring, so can now choose to use only < 8 nt repeats of a unit
 * Some (or many) units may become unpreferred, making repeat trimming and filtering much less aggressive

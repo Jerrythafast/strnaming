@@ -387,7 +387,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 structure))
 
             # If we now end up with too short an STR structure, drop it.
-            if not filtered_structure or filtered_structure[-1][1] - filtered_structure[0][0] < libstrnaming.NAMING_OPTIONS["min_structure_length"]:
+            if not filtered_structure or filtered_structure[-1][1] - filtered_structure[0][0] < libstrnaming.MIN_STRUCTURE_LENGTH:
                 continue
 
             # We need to remember where the first actually included structure began, as
@@ -670,7 +670,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         for start, end, unit, i in stretches:
             if start > pos:
                 gap = normalized_seq[pos:start]
-                if start - pos > libstrnaming.NAMING_OPTIONS["max_gap"] and (i > prev_i or self.library[i]["overlong_gap"]):
+                if start - pos > libstrnaming.MAX_GAP_LENGTH and (i > prev_i or self.library[i]["overlong_gap"]):
                     # Handle overlong gap.
                     gap_ref = self.library[i]["prefix" if i > prev_i else "overlong_gap"]
                     if gap_ref == gap:
