@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2023 Jerry Hoogenboom
+# Copyright (C) 2024 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -42,6 +42,9 @@ def detect_repeats_np(seq):
     Return a matrix of MAX_UNIT_LENGTH x len(seq) elements.
     The value at position (j,i) gives the length of a repeat of units of
     length j (in number of units), ending in position i in the sequence.
+
+    This is a vectorized version of libstrnaming.detect_repeats that
+    returns a numpy ndarray instance instead of a nested list.
     """
     sa = np.fromiter(map(ord, seq), count=len(seq), dtype=np.int32)
     matrix = np.empty((MAX_UNIT_LENGTH, len(seq)), dtype=np.int32)
@@ -63,6 +66,9 @@ def find_longest_repeat_np(matrix):
     Get start and end position and unit length of the longest repeat in
     matrix.  Break ties by choosing the shortest unit, the earliest in
     the sequence (lowest indices into matrix).
+
+    This is a vectorized version of libstrnaming.find_longest_repeat that
+    operates on a numpy ndarray instance instead of a nested list.
     """
     max_repeats = matrix.max(1)
     max_lengths = np.where(max_repeats == 1, 0, max_repeats * np.arange(1, MAX_UNIT_LENGTH + 1))
@@ -329,8 +335,10 @@ def recurse_collapse_repeat_units_refseq(seq, *, offset=0, status_callback=None,
 
 def get_scopes_from_seq(seq):
     """Return a sorted list of unique, possibly-overlapping scopes on seq."""
-    # Build an overview of all 4+ repeat locations of 8+ nt.
+    global np
     import numpy as np
+
+    # Build an overview of all 4+ repeat locations of 8+ nt.
     matrix = detect_repeats_np(seq)
     locations_4r_8nt = np.zeros(len(seq), dtype=np.int32)
     locations_8nt = np.zeros(len(seq), dtype=np.int32)
