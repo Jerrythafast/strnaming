@@ -25,10 +25,15 @@ Alternatively, STRNaming can be installed by running:
 
 Usage
 -----
-This initial version of STRNaming allows generating allele names for sequence
-data using the ranges and sequence orientation of the "Flanking Region Report"
-of the Universal Analysis Software for the ForenSeq DNA Signature Prep Kit
-(Verogen).
+This version of STRNaming comes with a command-line interface which allows
+generating allele names for sequence data using the ranges and sequence
+orientation of the "Flanking Region Report" of the Universal Analysis
+Software for the ForenSeq DNA Signature Prep Kit (Verogen). A user-friendly
+web version of STRNaming that allows to set your own sequence ranges can be
+found at the website (https://fdstools.nl/strnaming). For more general
+command-line usage it is currently recommended to install FDSTools and use
+the `fdstools seqconvert` tool to access STRNaming. Please refer to
+https://fdstools.nl for more information.
 
 ### Command-line interface
 The command-line help can be accessed by running `strnaming --help`. In short,
@@ -62,6 +67,9 @@ stream (`stdout`). Any errors are reported on the standard error stream
 `--unbuffered` command-line switch, STRNaming will immediately flush its output
 stream after every line of output.
 
+A more capable command-line interface to better support programmatic access to
+STRNaming will be introduced in a future release.
+
 ### Offline use
 STRNaming will automatically download and cache portions of reference sequence
 from the Ensembl REST API (http://rest.ensembl.org). If you are running
@@ -79,6 +87,17 @@ These are the files to be copied to the offline system for STRNaming to work.
 
 Release Notes
 -------------
+### Version 1.2.0 (11 January 2024)
+Naming of some loci has been updated as a result of bug fixes and improvements
+to the algorithm. Most notably, reference sequence analysis has been redesigned
+in such a way that it is no longer affected by the range of reference sequence
+analysed at once.
+* Updated CE allele numbering of D6S474 (-1 unit).
+* Maximum resource usage can now be controlled by setting environment variables
+  STRNAMING_MAX_SECONDS (float, default 30.0),
+  STRNAMING_MAX_SECONDS_REFSEQ (float, default 300.0) and
+  STRNAMING_MAX_SCAFFOLDS (int, default 5000000).
+
 ### Version 1.1.4 (7 February 2023)
 * Repeat stretches that fall completely in the prefix or suffix are now ignored.
 * Sequences that follow the same repeat pattern as the reference sequence are
