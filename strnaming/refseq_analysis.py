@@ -456,16 +456,12 @@ if __name__ == "__main__":
     """
     import argparse
     import functools
-    import libstrnaming
     parser = argparse.ArgumentParser()
     parser.add_argument("--chr", required=True)
     parser.add_argument("--start", type=int, required=True)
     parser.add_argument("--end", type=int, required=True)
     parser.add_argument("--threads", type=int, default=1)
-    parser.add_argument("--maxtime", type=int, default=300)
     args = parser.parse_args()
-    libstrnaming.MAX_SECONDS = args.maxtime
-    libstrnaming.MAX_SECONDS_REFSEQ = args.maxtime
     chr = args.chr.upper().lstrip("CHR")
     callback = functools.partial(print_callback, chr)
     analyse_range(args.threads, chr, args.start, args.end, callback)

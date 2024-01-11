@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2023 Jerry Hoogenboom
+# Copyright (C) 2024 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -20,6 +20,7 @@
 #
 import itertools
 import math
+import os
 import re
 import sys
 import time
@@ -29,11 +30,11 @@ from functools import reduce
 from .libsequence import align
 
 # Maximum number of seconds that get_best_path() may spend.
-MAX_SECONDS = 30
-MAX_SECONDS_REFSEQ = 300
+MAX_SECONDS = float(os.environ.get("STRNAMING_MAX_SECONDS", 30.))
+MAX_SECONDS_REFSEQ = float(os.environ.get("STRNAMING_MAX_SECONDS_REFSEQ", 300.))
 
 # Maximum number of scaffolds that generate_scaffolds() may generate.
-MAX_SCAFFOLDS = 5000000
+MAX_SCAFFOLDS = int(os.environ.get("STRNAMING_MAX_SCAFFOLDS", 5000000))
 
 # Number of times a repeat must be repeated to make a significant enough repeat stretch for refseq analysis to kick in.
 REFSEQ_MINIMUM_REPEATS = 4
