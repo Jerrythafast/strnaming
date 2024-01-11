@@ -18,9 +18,10 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with STRNaming.  If not, see <http://www.gnu.org/licenses/>.
 #
-import re, sys
+import re
+import sys
 
-from . import length_adjustments, libsequence, libstrnaming, refseq_cache, reference_structures, html
+from . import length_adjustments, libsequence, libstrnaming, refseq_analysis, refseq_cache, reference_structures, html
 # TODO: Proper argument/input checking for all classes/methods!
 
 
@@ -172,7 +173,7 @@ class ReferenceStructureStore:
         loaded from disk cache or downloaded from Ensembl if necessary.
         """
         seq = self.refseq_store.get_refseq(chromosome, start, end, autoload=autoload)
-        for structure in libstrnaming.recurse_collapse_repeat_units_refseq(seq, offset=start):
+        for structure in refseq_analysis.recurse_collapse_repeat_units_refseq(seq, offset=start):
             self.add_structure(
                 chromosome, [[s_start, s_end, len(unit)] for s_start, s_end, unit in structure])
 
@@ -386,7 +387,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 structure))
 
             # If we now end up with too short an STR structure, drop it.
-            if not filtered_structure or filtered_structure[-1][1] - filtered_structure[0][0] < libstrnaming.NAMING_OPTIONS["min_structure_length"]:
+            if not filtered_structure or filtered_structure[-1][1] - filtered_structure[0][0] < libstrnaming.MIN_STRUCTURE_LENGTH:
                 continue
 
             # We need to remember where the first actually included structure began, as
@@ -399,6 +400,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
             # Store end position of last structure for later suffix/postinsert adjustment.
             last_structure_end = structure[-1][1]
+
+            # Determine the block_length of the full reference structure.
+            block_length = libstrnaming.find_block_length(structure)
 
             # Find unique repeat units.
             units = [refseq_store.get_refseq(chromosome, stretch[0], stretch[0] + stretch[2])
@@ -416,8 +420,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 if stretch_start > regex_pos:
                     regex_blocks.append(
                         "%s" % refseq_store.get_refseq(chromosome, regex_pos, stretch_start))
-                regex_blocks.append("((%s)+)" % refseq_store.get_refseq(
-                    chromosome, stretch_start, stretch_start + unit_length))
+                regex_blocks.append("((%s){%i,})" % (refseq_store.get_refseq(
+                        chromosome, stretch_start, stretch_start + unit_length),
+                        3 if unit_length == 1 else 2 if unit_length == 2 else 1))
                 regex_pos = stretch_end
             if regex_pos < end:
                 regex_blocks.append("%s" % refseq_store.get_refseq(chromosome, regex_pos, end))
@@ -430,6 +435,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
                 self.postinsert = refseq_store.get_refseq(chromosome, end, structure[-1][1])
 
             # Update block_length if this structure contains the longest stretch so far.
+            # NOTE: The ReportedRange's block_length is determined by in-range stretches only!
             for stretch_start, stretch_end, unit_length in structure:
                 stretch_length = stretch_end - stretch_start
                 if stretch_length < longest_stretch:
@@ -458,6 +464,9 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
 
                 # The repeat units in the reference STR structure.
                 "units": units,
+
+                # The unit length of the longest repeat in the reference STR structure.
+                "block_length": block_length,
 
                 # A compiled regular expression that matches the reference structure.
                 "regex": regex
@@ -534,7 +543,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
             else:
                 try:
                     path = libstrnaming.collapse_repeat_units(normalized_seq[pos:end],
-                        part["prefix"], suffix, part["units"], part["overlong_gap"])
+                        part["prefix"], suffix, part["units"], part["block_length"], len(part["overlong_gap"]))
                 except libstrnaming.OutOfTimeException:
                     # TODO: Add range name to this message (and possibly others).
                     sys.stderr.write("STRNaming Ran out of time while analysing sequence %s\n"
@@ -661,7 +670,7 @@ class ReportedRange:  # TODO: this could extend ComplexReportedRange to avoid co
         for start, end, unit, i in stretches:
             if start > pos:
                 gap = normalized_seq[pos:start]
-                if start - pos > libstrnaming.NAMING_OPTIONS["max_gap"] and (i > prev_i or self.library[i]["overlong_gap"]):
+                if start - pos > libstrnaming.MAX_GAP_LENGTH and (i > prev_i or self.library[i]["overlong_gap"]):
                     # Handle overlong gap.
                     gap_ref = self.library[i]["prefix" if i > prev_i else "overlong_gap"]
                     if gap_ref == gap:

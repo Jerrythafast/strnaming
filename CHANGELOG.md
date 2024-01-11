@@ -1,8 +1,32 @@
 STRNaming Changelog
 ===================
+### Version 1.2.0 (TBD)
+* Scoring will now always use the block length of the reference structure.
+* Structures will never contain more than 6 different repeat units anymore.
+* Repeats that completely overlap with a singleton of a longer unit are no
+  longer ignored (e.g., allow A[4] in the place of AAAAG[1]).
+* Singletons are now ignored if they completely overlap any 8nt+ repeat of
+  a preferred unit.
+* The pattern used by ReportedRange.get_stretches() will no longer create
+  repeat structures with stretches shorter than 3 nt, making it consistent
+  with the rules applied by the full STRNaming algorithm.
+* Updated initial reference sequence analysis algorithm:
+  * Initial reference sequence analysis now starts by setting a well-defined
+    scope around the longest repeat in the provided sequence and will now
+    include all occurences (including singletons) of all units that appear
+    in an 8nt+ repeat (possibly overlapping) somewhere inside this scope.
+  * During intial reference sequence analysis, repeats of less than 8nt
+    (including singletons) are now only used in structures that also contain
+    an 8nt+ repeat of the same unit.
+  * Changed rule: the longest stretch (as measured in nt) in reference
+    structure does not need to be repeated 4 times anymore.
+  * Fixed a bug causing refseq analysis to not consider all possible
+    start/stop combinations where significant repeats overlap.
+* Updated reference sequence download URL to use HTTPS.
+
 ### Version 1.1.4 (7 February 2023)
 * Ignore repeat stretches that fall completely in the prefix or suffix.
-* ReportedRange.get_stretches() now attempts a quick regex match against the
+* ReportedRange.get_stretches() now attempts a quick pattern match against the
   reference structure prior to calling collapse_repeat_units().
 * Added capability to load reference structures from many locations on one
   chromosome in a single pass.

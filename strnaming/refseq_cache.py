@@ -1,5 +1,5 @@
 #
-# Copyright (C) 2021 Jerry Hoogenboom
+# Copyright (C) 2023 Jerry Hoogenboom
 #
 # This file is part of STRNaming, an algorithm for generating simple,
 # informative names for sequenced STR alleles in a standardised and
@@ -65,7 +65,7 @@ CACHEDIR = Path.home() / ".strnaming-cache"
 CHUNKFILENAME = "refseq-{chromosome}-{chunk}.txt.gz"
 
 # Constants for automatic downloading.
-ENSEMBL_URL = "http://rest.ensembl.org/sequence/region/human/chr{chromosome}:{start}..{end}?content-type=text/plain"
+ENSEMBL_URL = "https://rest.ensembl.org/sequence/region/human/chr{chromosome}:{start}..{end}?content-type=text/plain"
 DOWNLOAD_ATTEMPTS = 5  # Maximum number of attempts to download sequence from Ensembl.
 DOWNLOAD_INTERVAL = 2  # Seconds to wait (can be float) after a failed download attempt.
 
